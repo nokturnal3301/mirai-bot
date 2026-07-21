@@ -53,6 +53,22 @@ const fetchEmbed = async (
 	);
 };
 
+const buildEmbedPlan =
+	(url: string) =>
+	(media: InstagramMedia): Flow<MediaPlan, ExtractionError> => {
+		const plan = buildInstagramMediaPlan(media, HEADERS);
+		if (
+			/^\/(?:reels?|tv)\//.test(new URL(url).pathname) &&
+			plan._tag === "Continue" &&
+			plan.value.type === "photo"
+		) {
+			return F.fail(
+				extractionError("NO_MEDIA", "embed returned only a video cover"),
+			);
+		}
+		return plan;
+	};
+
 export const embed = defineStrategy(
 	"embed",
 	(
@@ -67,6 +83,6 @@ export const embed = defineStrategy(
 				),
 			)
 			.pipe((shortcode) => fetchEmbed(shortcode, context.signal))
-			.pipe((media) => buildInstagramMediaPlan(media, HEADERS))
+			.pipe(buildEmbedPlan(url))
 			.run(),
 );

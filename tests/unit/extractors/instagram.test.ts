@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { InstagramMediaInfoSchema } from "extractors/instagram/schemas";
-import { parseEmbedMedia } from "extractors/instagram/strategies/embed";
+import { embed, parseEmbedMedia } from "extractors/instagram/strategies/embed";
 import {
 	buildInstagramMediaPlan,
 	extractShortcode,
@@ -9,6 +9,7 @@ import {
 	parseDashManifest,
 } from "extractors/instagram/utils";
 import { instagram } from "extractors/instagram/extractor";
+import { execute, sequence } from "lib";
 
 describe("instagram", () => {
 	describe("extractShortcode", () => {
@@ -105,6 +106,40 @@ describe("instagram", () => {
 	});
 
 	describe("normalized strategy payloads", () => {
+		test("rejects a cover-only embed payload for a Reel", async () => {
+			const context = {
+				gql_data: {
+					shortcode_media: {
+						shortcode: "DbBZDozOtz-",
+						display_url: "https://cdn.example/video-cover.jpg",
+						dimensions: { width: 720, height: 1280 },
+						video_duration: 9,
+					},
+				},
+			};
+			const escaped = JSON.stringify(JSON.stringify(context)).slice(1, -1);
+			const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+				new Response(`<script>{"contextJSON":"${escaped}"}</script>`),
+			);
+
+			try {
+				const result = await execute({
+					tag: "instagram-test",
+					input: "https://instagram.com/reel/DbBZDozOtz-/",
+					plan: sequence([embed.with({ kind: "metadata", cost: "cheap" })]),
+				}).run();
+
+				expect(result._tag).toBe("Fail");
+				if (result._tag === "Fail") {
+					expect(result.error.message).toBe(
+						"embed returned only a video cover",
+					);
+				}
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
 		test("parses graph media from an embed contextJSON payload", () => {
 			const context = {
 				gql_data: {
