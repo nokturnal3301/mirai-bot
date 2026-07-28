@@ -253,10 +253,11 @@ export const videoSourceOf = (
 	if (!video) return null;
 
 	const variants = (video.bitrateInfo ?? [])
-		.map(({ Bitrate, PlayAddr }) => ({
+		.map(({ Bitrate, CodecType, PlayAddr }) => ({
 			url: PlayAddr?.UrlList?.[0],
 			size: PlayAddr?.DataSize,
 			bitrate: Bitrate ?? 0,
+			codec: CodecType,
 			width: PlayAddr?.Width ?? video.width,
 			height: PlayAddr?.Height ?? video.height,
 		}))
@@ -264,8 +265,10 @@ export const videoSourceOf = (
 			(candidate): candidate is typeof candidate & { url: string } =>
 				!!candidate.url,
 		);
+	const h264 = variants.filter(({ codec }) => codec?.startsWith("h264"));
+	const candidates = h264.length > 0 ? h264 : variants;
 
-	const fitting = variants
+	const fitting = candidates
 		.filter(({ size }) => size === undefined || size <= maxBytes)
 		.sort(byBitrateDesc);
 	const withinLatencyBudget = fitting
@@ -290,7 +293,7 @@ export const videoSourceOf = (
 				config.tiktok.maxQuality,
 		)
 		.sort(bySizeAsc);
-	const smallest = [...variants].sort(bySizeAsc)[0];
+	const smallest = [...candidates].sort(bySizeAsc)[0];
 	const selected =
 		withinLatencyBudget[0] ??
 		sizedForTelegramFetch[0] ??

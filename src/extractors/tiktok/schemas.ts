@@ -20,6 +20,7 @@ export const SSRItemSchema = z.looseObject({
 				.array(
 					z.looseObject({
 						Bitrate: nonNegativeNumber.optional(),
+						CodecType: z.string().optional(),
 						PlayAddr: z
 							.looseObject({
 								UrlList: z.array(z.string()).max(8).optional(),

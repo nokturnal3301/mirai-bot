@@ -146,6 +146,33 @@ describe("tiktok", () => {
 	});
 
 	describe("videoSourceOf", () => {
+		test("prefers a muxed H.264 rendition over video-only HEVC", () => {
+			const item = SSRItemSchema.parse({
+				video: {
+					bitrateInfo: [
+						{
+							Bitrate: 700_000,
+							CodecType: "h265_hvc1",
+							PlayAddr: {
+								UrlList: ["https://cdn.test/video-only.mp4"],
+								DataSize: 7 * 1024 * 1024,
+							},
+						},
+						{
+							Bitrate: 400_000,
+							CodecType: "h264",
+							PlayAddr: {
+								UrlList: ["https://cdn.test/muxed.mp4"],
+								DataSize: 9 * 1024 * 1024,
+							},
+						},
+					],
+				},
+			});
+
+			expect(videoSourceOf(item)?.url).toBe("https://cdn.test/muxed.mp4");
+		});
+
 		test("prefers a fast rendition over the largest fitting variant", () => {
 			const item = SSRItemSchema.parse({
 				video: {
