@@ -10,7 +10,7 @@ export const threads: Extractor = {
 		matchesHttpUrl(
 			url,
 			["threads.com", "threads.net"],
-			/^\/@[\w.-]+\/post\/[\w-]+/,
+			/^\/(?:@[\w.-]+\/post\/[\w-]+|share\/[\w-]+)/,
 		),
 	extract: (url) =>
 		execute({

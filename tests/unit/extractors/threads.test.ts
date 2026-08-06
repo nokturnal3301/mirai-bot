@@ -1,7 +1,9 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { threads } from "extractors/threads/extractor";
 import { extractPostCode } from "extractors/threads/utils";
 import { ThreadsPostSchema } from "extractors/threads/schemas";
+import { ssr } from "extractors/threads/strategies/ssr";
+import { execute, sequence } from "lib";
 
 describe("threads", () => {
 	describe("match", () => {
@@ -21,6 +23,12 @@ describe("threads", () => {
 			expect(
 				threads.match("https://www.threads.com/@user.name-1/post/ABC"),
 			).toBe(true);
+		});
+
+		test("matches share URLs", () => {
+			expect(threads.match("https://www.threads.com/share/BBRZCc2I7D/")).toBe(
+				true,
+			);
 		});
 
 		test("does not match profile URLs", () => {
@@ -52,6 +60,46 @@ describe("threads", () => {
 		test("returns null for non-threads URL", () => {
 			expect(extractPostCode("https://instagram.com/p/abc")).toBeNull();
 		});
+	});
+
+	test("resolves a share URL before SSR extraction", async () => {
+		const postCode = "DbsgV0DjR5v";
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+			input,
+		) => {
+			if (String(input).includes("/share/")) {
+				return new Response(null, {
+					status: 302,
+					headers: {
+						Location: `https://www.threads.com/@user/post/${postCode}`,
+					},
+				});
+			}
+			return new Response(
+				`<script type="application/json" data-sjs>${JSON.stringify({
+					code: postCode,
+					video_versions: [{ url: "https://cdn.test/video.mp4" }],
+				})}</script>`,
+			);
+		}) as typeof fetch);
+
+		try {
+			const result = await execute({
+				tag: "threads-test",
+				input: "https://www.threads.com/share/BBRZCc2I7D/",
+				plan: sequence([ssr.with({ kind: "metadata", cost: "normal" })]),
+			}).run();
+
+			expect(result).toMatchObject({
+				_tag: "Continue",
+				value: {
+					type: "video",
+					source: { kind: "download", url: "https://cdn.test/video.mp4" },
+				},
+			});
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 
 	describe("ThreadsPostSchema", () => {

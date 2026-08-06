@@ -27,6 +27,27 @@ const findPostInJson = (
 	return null;
 };
 
+const resolvePostCode = async (
+	url: string,
+	signal: AbortSignal,
+): Promise<Flow<string, ExtractionError>> => {
+	const direct = extractPostCode(url);
+	if (direct) return F.of(direct);
+
+	const response = await http(url, {
+		headers: HEADERS,
+		redirect: "manual",
+		responseType: "raw",
+		signal,
+	});
+	const location = response.headers.get("location");
+	await response.body?.cancel().catch(() => {});
+	return F.failIfNull(
+		extractionError("UPSTREAM_REJECTED", "invalid Threads share redirect"),
+		location ? extractPostCode(new URL(location, url).toString()) : null,
+	);
+};
+
 const fetchPost = async (
 	postCode: string,
 ): Promise<Flow<ThreadsPost, ExtractionError>> => {
@@ -153,14 +174,9 @@ const buildPlan = (post: ThreadsPost): Flow<MediaPlan, ExtractionError> => {
 
 export const ssr = defineStrategy(
 	"ssr",
-	(url: string): Promise<Flow<MediaPlan, ExtractionError>> =>
+	(url: string, context): Promise<Flow<MediaPlan, ExtractionError>> =>
 		chain(F.of(url))
-			.pipe((url) =>
-				F.failIfNull(
-					extractionError("NOT_APPLICABLE", "no Threads post code"),
-					extractPostCode(url),
-				),
-			)
+			.pipe((url) => resolvePostCode(url, context.signal))
 			.pipe(fetchPost)
 			.pipe(buildPlan)
 			.run(),
