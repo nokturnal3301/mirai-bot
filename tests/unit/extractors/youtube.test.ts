@@ -106,7 +106,7 @@ describe("youtube", () => {
 				if (result._tag !== "Continue" || result.value.type !== "video") return;
 				expect(result.value.data).toBeInstanceOf(Blob);
 				expect((result.value.data as Blob).size).toBe(1024);
-				expect(mediaUserAgent ?? "").toContain("youtube.vr.oculus");
+				expect(mediaUserAgent ?? "").toContain("Version/26.0 Safari");
 			} finally {
 				fetchSpy.mockRestore();
 			}

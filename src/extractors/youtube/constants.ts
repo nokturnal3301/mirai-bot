@@ -35,19 +35,18 @@ export const TRUSTED_BOTGUARD_HOSTS =
 
 export const CLIENTS: Client[] = [
 	{
-		name: "android_vr",
-		id: "28",
+		name: "visionos",
+		id: "101",
 		poToken: "none",
 		userAgent:
-			"com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
 		client: {
-			clientName: "ANDROID_VR",
-			clientVersion: "1.65.10",
-			deviceMake: "Oculus",
-			deviceModel: "Quest 3",
-			androidSdkVersion: 32,
-			osName: "Android",
-			osVersion: "12L",
+			clientName: "VISIONOS",
+			clientVersion: "1.02",
+			deviceMake: "Apple",
+			deviceModel: "RealityDevice17,1",
+			osName: "visionOS",
+			osVersion: "26.5.23O471",
 			hl: "en",
 			gl: "US",
 		},
