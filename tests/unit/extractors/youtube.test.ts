@@ -1,6 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import type { StrategyContext } from "lib";
 import { extractVideoId } from "extractors/youtube/utils";
 import { youtube } from "extractors/youtube/extractor";
+import { adaptive } from "extractors/youtube/strategies/adaptive";
 
 describe("youtube", () => {
 	describe("extractVideoId", () => {
@@ -63,6 +65,71 @@ describe("youtube", () => {
 	});
 
 	describe("extraction", () => {
+		test("prefers original audio over a higher-bitrate auto-dub", async () => {
+			const originalAudioUrl = "https://media.example/original.m4a";
+			const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+				input,
+			) => {
+				if (String(input) === "https://www.youtube.com/") {
+					return new Response('"visitorData":"visitor-id"');
+				}
+				return Response.json({
+					playabilityStatus: { status: "OK" },
+					streamingData: {
+						adaptiveFormats: [
+							{
+								url: "https://media.example/video.mp4",
+								mimeType: 'video/mp4; codecs="avc1.4d401f"',
+								width: 720,
+								height: 1280,
+							},
+							{
+								url: "https://media.example/dubbed.m4a",
+								mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+								bitrate: 192_000,
+								audioTrack: {
+									displayName: "English (US)",
+									id: "en-US.10",
+									audioIsDefault: false,
+									isAutoDubbed: true,
+								},
+							},
+							{
+								url: originalAudioUrl,
+								mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+								bitrate: 128_000,
+								audioTrack: {
+									displayName: "Russian original",
+									id: "ru.4",
+									audioIsDefault: true,
+								},
+							},
+						],
+					},
+					videoDetails: { lengthSeconds: "10" },
+				});
+			}) as typeof fetch);
+			const signal = new AbortController().signal;
+			const context: StrategyContext = {
+				signal,
+				resolve: (_fact, load) => load(signal),
+			};
+
+			try {
+				const result = await adaptive
+					.with({ kind: "fallback", cost: "expensive" })
+					.execute("https://youtube.com/shorts/audioTrack1", context);
+
+				expect(result._tag).toBe("Continue");
+				if (result._tag !== "Continue" || result.value.type !== "video") return;
+				expect(result.value.source.kind).toBe("mux");
+				if (result.value.source.kind !== "mux") return;
+				expect(result.value.source.audioUrl).toBe(originalAudioUrl);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
 		test("downloads media inside the sticky route attempt", async () => {
 			const mediaUrl = "https://media.example/short.mp4";
 			let mediaUserAgent: string | null = null;

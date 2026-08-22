@@ -8,6 +8,14 @@ export const FormatSchema = z.looseObject({
 	height: z.number().optional(),
 	contentLength: z.string().optional(),
 	approxDurationMs: z.string().optional(),
+	audioTrack: z
+		.looseObject({
+			displayName: z.string().optional(),
+			id: z.string().optional(),
+			audioIsDefault: z.boolean().optional(),
+			isAutoDubbed: z.boolean().optional(),
+		})
+		.optional(),
 });
 
 export const InnertubeResponseSchema = z.looseObject({

@@ -51,10 +51,19 @@ const selectAdaptiveStreams = (
 	const audios = filterByMime(adaptive, "audio/").sort(
 		(a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0),
 	);
+	const originals = audios.filter(
+		({ audioTrack }) =>
+			audioTrack?.audioIsDefault ||
+			audioTrack?.displayName?.toLowerCase().includes("original"),
+	);
+	const nonDubbed = audios.filter(
+		({ audioTrack }) => audioTrack?.isAutoDubbed !== true,
+	);
 
 	const h264 = videos.filter((v) => codecOf(v).startsWith("avc"));
 	const videoPool = h264.length > 0 ? h264 : videos;
-	const bestAudio = audios[0];
+	const bestAudio =
+		(originals.length > 0 ? originals : nonDubbed)[0] ?? audios[0];
 	const audioBytes = bestAudio
 		? estimatedBytesOf(bestAudio, duration)
 		: undefined;
