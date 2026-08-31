@@ -315,6 +315,24 @@ describe("tiktok", () => {
 	});
 
 	describe("buildTikTokMediaPlan", () => {
+		test("does not retry content that TikTok requires login to view", () => {
+			const item = SSRItemSchema.parse({
+				isContentClassified: true,
+				video: {},
+			});
+
+			const flow = buildTikTokMediaPlan(item, "", "page");
+			expect(flow).toEqual({
+				_tag: "Fail",
+				error: {
+					code: "UPSTREAM_REJECTED",
+					message: "TikTok requires login for classified content",
+					retryable: false,
+					terminal: true,
+				},
+			});
+		});
+
 		test("downloads video direct first, proxy as fallback", () => {
 			const item = SSRItemSchema.parse({
 				author: { uniqueId: "user" },

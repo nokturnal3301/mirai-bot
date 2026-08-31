@@ -129,6 +129,15 @@ export const buildTikTokMediaPlan = (
 	}
 
 	const source = videoSourceOf(item);
+	if (!source && item.isContentClassified) {
+		return F.fail(
+			extractionError(
+				"UPSTREAM_REJECTED",
+				"TikTok requires login for classified content",
+				{ retryable: false, terminal: true },
+			),
+		);
+	}
 	if (!source || source.url.includes("kmoat")) {
 		return F.fail(extractionError("NO_MEDIA", "no TikTok video URL"));
 	}

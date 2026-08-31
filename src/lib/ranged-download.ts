@@ -147,7 +147,7 @@ export const downloadInRanges = async (
 
 		if (connections === 1 || probe.total < MIN_PARALLEL_SIZE) {
 			const response = await http(url, {
-				headers: options.headers,
+				headers: withRange(options.headers, `bytes=0-${probe.total - 1}`),
 				responseType: "raw",
 				attempts: options.attempts ?? 1,
 				timeout: options.timeout ?? config.http.timeout,
@@ -159,7 +159,7 @@ export const downloadInRanges = async (
 				options.maxBytes,
 				options.onBytes,
 			);
-			if (expectedBytes !== undefined && bytes.length !== expectedBytes) {
+			if (bytes.length !== probe.total) {
 				throw new Error(`unexpected size for ${options.label}`);
 			}
 			logger.info(

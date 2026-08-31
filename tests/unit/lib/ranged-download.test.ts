@@ -71,4 +71,39 @@ describe("ranged download", () => {
 			fetchSpy.mockRestore();
 		}
 	});
+
+	test("keeps a bounded Range request for a small source", async () => {
+		const source = new Uint8Array([1, 2, 3]);
+		const ranges: (string | null)[] = [];
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+			_input,
+			init,
+		) => {
+			const range = new Headers(init?.headers).get("range");
+			ranges.push(range);
+			if (range === "bytes=0-0") {
+				return new Response(source.subarray(0, 1), {
+					status: 206,
+					headers: { "Content-Range": `bytes 0-0/${source.length}` },
+				});
+			}
+			return new Response(source, {
+				status: 206,
+				headers: { "Content-Range": `bytes 0-2/${source.length}` },
+			});
+		}) as typeof fetch);
+
+		try {
+			const result = await downloadInRanges(URL, {
+				connections: 2,
+				maxBytes: 1024,
+				label: "test-audio",
+			});
+
+			expect(ranges).toEqual(["bytes=0-0", "bytes=0-2"]);
+			expect(result.bytes).toEqual(source);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
 });

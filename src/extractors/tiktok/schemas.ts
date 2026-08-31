@@ -8,6 +8,7 @@ const nonNegativeNumber = z.preprocess(
 
 export const SSRItemSchema = z.looseObject({
 	desc: z.string().optional(),
+	isContentClassified: z.boolean().optional(),
 	author: z
 		.looseObject({
 			uniqueId: z.string().optional(),
