@@ -8,7 +8,7 @@ const VREDD_PATTERN = /v\.redd\.it\/([\w]+)/;
 const IREDD_PATTERN = /i\.redd\.it\/([\w]+)\./;
 
 const CHALLENGE_PATTERN = /await\(async e=>e\+e\)\("([a-f0-9]+)"\)/;
-const TOKEN_PATTERN = /name="token" value="([a-f0-9]+)"/;
+const TOKEN_PATTERN = /name="jsc_token" value="([a-f0-9]+)"/;
 const CHALLENGE_TARGET = "https://www.reddit.com/r/popular/";
 const COOKIE_TTL_MS = 30 * 60 * 1000;
 
@@ -54,7 +54,7 @@ const solveChallenge = async (): Promise<string> => {
 	}
 
 	const cookies1 = collectCookies(r1);
-	const url = `${CHALLENGE_TARGET}?solution=${challenge}${challenge}&js_challenge=1&token=${token}&jsc_orig_r=`;
+	const url = `${CHALLENGE_TARGET}?solution=${challenge}${challenge}&js_challenge=1&jsc_token=${token}&jsc_orig_r=`;
 
 	const r2 = await http(url, {
 		headers: { ...HEADERS, Cookie: dedupCookies(cookies1) },
