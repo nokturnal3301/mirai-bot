@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn } from "bun:test";
 import { InstagramMediaInfoSchema } from "extractors/instagram/schemas";
 import { embed, parseEmbedMedia } from "extractors/instagram/strategies/embed";
+import { graphql } from "extractors/instagram/strategies/graphql";
 import {
 	buildInstagramMediaPlan,
 	extractShortcode,
@@ -106,6 +107,42 @@ describe("instagram", () => {
 	});
 
 	describe("normalized strategy payloads", () => {
+		test("does not retry age-restricted GraphQL media", async () => {
+			const fetchSpy = spyOn(globalThis, "fetch")
+				.mockResolvedValueOnce(new Response('["LSD",[],{"token":"abc"}]'))
+				.mockResolvedValueOnce(
+					Response.json({
+						data: {
+							xig_polaris_media: {
+								gating_ruling: { gating_type: 3 },
+							},
+						},
+					}),
+				);
+
+			try {
+				const result = await execute({
+					tag: "instagram-test",
+					input: "https://instagram.com/reel/RESTRICTED/",
+					plan: sequence([
+						graphql.with({ kind: "fallback", cost: "expensive" }),
+					]),
+				}).run();
+
+				expect(result).toEqual({
+					_tag: "Fail",
+					error: {
+						code: "UPSTREAM_REJECTED",
+						message: "Instagram requires login for age-restricted content",
+						retryable: false,
+						terminal: true,
+					},
+				});
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
 		test("rejects a cover-only embed payload for a Reel", async () => {
 			const context = {
 				gql_data: {

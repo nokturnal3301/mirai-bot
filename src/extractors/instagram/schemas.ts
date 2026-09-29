@@ -110,3 +110,19 @@ export const InstagramGraphMediaSchema: z.ZodType<InstagramGraphMedia> = z.lazy(
 export const InstagramMediaInfoSchema = z.looseObject({
 	items: z.array(InstagramMediaSchema).optional(),
 });
+
+export const InstagramGraphqlResponseSchema = z.looseObject({
+	data: z
+		.looseObject({
+			xig_polaris_media: z
+				.looseObject({
+					gating_ruling: z
+						.looseObject({ gating_type: z.number().optional() })
+						.nullable()
+						.optional(),
+				})
+				.nullable()
+				.optional(),
+		})
+		.optional(),
+});

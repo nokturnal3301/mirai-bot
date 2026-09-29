@@ -2,6 +2,7 @@ import type { MediaPlan } from "extractors/media";
 import type { ExtractionError, Flow, StrategyContext } from "lib";
 
 import { HEADERS } from "extractors/instagram/constants";
+import { InstagramGraphqlResponseSchema } from "extractors/instagram/schemas";
 import {
 	buildInstagramMediaPlan,
 	extractShortcode,
@@ -82,6 +83,20 @@ const fetchGraphql = async (
 		attempts: 1,
 		signal,
 	});
+	const ruling =
+		InstagramGraphqlResponseSchema.safeParse(raw).data?.data?.xig_polaris_media
+			?.gating_ruling;
+	if (ruling) {
+		return F.fail(
+			extractionError(
+				"UPSTREAM_REJECTED",
+				ruling.gating_type === 3
+					? "Instagram requires login for age-restricted content"
+					: "Instagram requires login for restricted content",
+				{ retryable: false, terminal: true },
+			),
+		);
+	}
 	const media =
 		findInstagramMedia(raw, shortcode) ??
 		findInstagramGraphMedia(raw, shortcode);
