@@ -57,8 +57,16 @@ const buildEmbedPlan =
 	(url: string) =>
 	(media: InstagramMedia): Flow<MediaPlan, ExtractionError> => {
 		const plan = buildInstagramMediaPlan(media, HEADERS);
+		const isVideoPost =
+			/^\/(?:reels?|tv)\//.test(new URL(url).pathname) ||
+			media.media_type === 2 ||
+			media.video_duration !== undefined ||
+			!!media.video_dash_manifest ||
+			!!media.image_versions2?.candidates?.some((candidate) =>
+				candidate.url.includes("video_default_cover_frame"),
+			);
 		if (
-			/^\/(?:reels?|tv)\//.test(new URL(url).pathname) &&
+			isVideoPost &&
 			plan._tag === "Continue" &&
 			plan.value.type === "photo"
 		) {

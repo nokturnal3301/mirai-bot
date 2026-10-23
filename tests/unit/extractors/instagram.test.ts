@@ -143,7 +143,7 @@ describe("instagram", () => {
 			}
 		});
 
-		test("rejects a cover-only embed payload for a Reel", async () => {
+		test("rejects a cover-only embed payload for a /p/ video", async () => {
 			const context = {
 				gql_data: {
 					shortcode_media: {
@@ -162,7 +162,7 @@ describe("instagram", () => {
 			try {
 				const result = await execute({
 					tag: "instagram-test",
-					input: "https://instagram.com/reel/DbBZDozOtz-/",
+					input: "https://instagram.com/p/DbBZDozOtz-/",
 					plan: sequence([embed.with({ kind: "metadata", cost: "cheap" })]),
 				}).run();
 
