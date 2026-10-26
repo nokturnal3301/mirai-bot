@@ -2,7 +2,15 @@ import type { ExtractionError, Flow } from "lib";
 import type { MediaItemPlan, MediaPlan } from "extractors/media";
 import type { ThreadsPost } from "extractors/threads/types";
 
-import { extractionError, F, chain, defineStrategy, http, logger } from "lib";
+import {
+	extractionError,
+	F,
+	chain,
+	defineStrategy,
+	getHttpContext,
+	http,
+	logger,
+} from "lib";
 import { HEADERS, SCRIPT_PATTERN } from "extractors/threads/constants";
 import { ThreadsPostSchema } from "extractors/threads/schemas";
 import { extractPostCode } from "extractors/threads/utils";
@@ -80,13 +88,30 @@ const itemPlanOf = (
 	const height = source.original_height ?? undefined;
 
 	if (videoUrl) {
+		// Threads CDN URLs are not IP-bound. Metadata may require a residential
+		// proxy, but sending the media bytes through it is slower and less reliable.
+		const directContext = { forceProxy: false };
+		const proxyContext = getHttpContext() ?? { forceProxy: true };
 		return {
 			type: "video",
 			source: {
-				kind: "download",
-				url: videoUrl,
-				headers: HEADERS,
-				attempts: 2,
+				kind: "fallback",
+				sources: [
+					{
+						kind: "download",
+						url: videoUrl,
+						headers: HEADERS,
+						attempts: 2,
+						httpContext: directContext,
+					},
+					{
+						kind: "download",
+						url: videoUrl,
+						headers: HEADERS,
+						attempts: 2,
+						httpContext: proxyContext,
+					},
+				],
 			},
 			width,
 			height,
@@ -107,6 +132,7 @@ const itemPlanOf = (
 			url: best.url,
 			headers: HEADERS,
 			attempts: 2,
+			httpContext: { forceProxy: false },
 		},
 		width: best.width ?? width ?? undefined,
 		height: best.height ?? height ?? undefined,

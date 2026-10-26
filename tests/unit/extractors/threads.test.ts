@@ -94,7 +94,21 @@ describe("threads", () => {
 				_tag: "Continue",
 				value: {
 					type: "video",
-					source: { kind: "download", url: "https://cdn.test/video.mp4" },
+					source: {
+						kind: "fallback",
+						sources: [
+							{
+								kind: "download",
+								url: "https://cdn.test/video.mp4",
+								httpContext: { forceProxy: false },
+							},
+							{
+								kind: "download",
+								url: "https://cdn.test/video.mp4",
+								httpContext: { forceProxy: true },
+							},
+						],
+					},
 				},
 			});
 		} finally {
