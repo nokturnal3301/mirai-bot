@@ -10,7 +10,7 @@ import {
 	parseDashManifest,
 } from "extractors/instagram/utils";
 import { instagram } from "extractors/instagram/extractor";
-import { execute, sequence } from "lib";
+import { execute, sequence, withHttpContext } from "lib";
 
 describe("instagram", () => {
 	describe("extractShortcode", () => {
@@ -107,6 +107,40 @@ describe("instagram", () => {
 	});
 
 	describe("normalized strategy payloads", () => {
+		test("retries region-muted videos through the proxy", async () => {
+			const media = {
+				media_type: 2,
+				has_audio: false,
+				video_versions: [{ url: "https://cdn.example/silent.mp4" }],
+				clips_metadata: {
+					music_info: {
+						music_consumption_info: {
+							should_mute_audio: true,
+							should_mute_audio_reason: "licensing restriction",
+						},
+					},
+				},
+			};
+
+			const direct = buildInstagramMediaPlan(media);
+			expect(direct).toMatchObject({
+				_tag: "Fail",
+				error: {
+					code: "UPSTREAM_REJECTED",
+					message: "licensing restriction",
+					retryable: true,
+				},
+			});
+
+			const proxied = await withHttpContext({ forceProxy: true }, async () =>
+				buildInstagramMediaPlan(media),
+			);
+			expect(proxied).toMatchObject({
+				_tag: "Fail",
+				error: { code: "UPSTREAM_REJECTED", retryable: false },
+			});
+		});
+
 		test("does not retry age-restricted GraphQL media", async () => {
 			const fetchSpy = spyOn(globalThis, "fetch")
 				.mockResolvedValueOnce(new Response('["LSD",[],{"token":"abc"}]'))

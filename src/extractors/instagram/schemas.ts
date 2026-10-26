@@ -25,6 +25,15 @@ export type InstagramMedia = {
 	original_width?: number;
 	original_height?: number;
 	media_type?: number;
+	has_audio?: boolean | null;
+	clips_metadata?: {
+		music_info?: {
+			music_consumption_info?: {
+				should_mute_audio?: boolean | null;
+				should_mute_audio_reason?: string | null;
+			} | null;
+		} | null;
+	} | null;
 	carousel_media?: InstagramMedia[];
 	user?: { username?: string };
 	owner?: { username?: string };
@@ -43,6 +52,21 @@ export const InstagramMediaSchema: z.ZodType<InstagramMedia> = z.lazy(() =>
 		original_width: z.number().optional(),
 		original_height: z.number().optional(),
 		media_type: z.number().optional(),
+		has_audio: z.boolean().nullish(),
+		clips_metadata: z
+			.looseObject({
+				music_info: z
+					.looseObject({
+						music_consumption_info: z
+							.looseObject({
+								should_mute_audio: z.boolean().nullish(),
+								should_mute_audio_reason: z.string().nullish(),
+							})
+							.nullish(),
+					})
+					.nullish(),
+			})
+			.nullish(),
 		carousel_media: z.array(InstagramMediaSchema).optional(),
 		user: z.looseObject({ username: z.string().optional() }).optional(),
 		owner: z.looseObject({ username: z.string().optional() }).optional(),

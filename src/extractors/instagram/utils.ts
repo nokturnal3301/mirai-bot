@@ -286,6 +286,28 @@ export const buildInstagramMediaPlan = (
 	media: InstagramMedia,
 	headers: Record<string, string> = CRAWLER_HEADERS,
 ): Flow<MediaPlan, ExtractionError> => {
+	const audioRestriction =
+		media.clips_metadata?.music_info?.music_consumption_info;
+	const isVideo =
+		media.media_type === 2 ||
+		!!media.video_versions?.length ||
+		!!media.video_dash_manifest;
+	if (
+		isVideo &&
+		media.has_audio === false &&
+		audioRestriction?.should_mute_audio === true
+	) {
+		const viaProxy = getHttpContext()?.forceProxy === true;
+		return F.fail(
+			extractionError(
+				"UPSTREAM_REJECTED",
+				audioRestriction.should_mute_audio_reason ||
+					"Instagram muted audio in this region",
+				{ retryable: !viaProxy },
+			),
+		);
+	}
+
 	const caption = {
 		author: media.user?.username ?? media.owner?.username,
 		text: media.caption?.text,
