@@ -297,13 +297,12 @@ export const buildInstagramMediaPlan = (
 		media.has_audio === false &&
 		audioRestriction?.should_mute_audio === true
 	) {
-		const viaProxy = getHttpContext()?.forceProxy === true;
 		return F.fail(
 			extractionError(
 				"UPSTREAM_REJECTED",
 				audioRestriction.should_mute_audio_reason ||
 					"Instagram muted audio in this region",
-				{ retryable: !viaProxy },
+				{ retryable: true },
 			),
 		);
 	}

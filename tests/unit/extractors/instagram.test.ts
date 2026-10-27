@@ -137,7 +137,7 @@ describe("instagram", () => {
 			);
 			expect(proxied).toMatchObject({
 				_tag: "Fail",
-				error: { code: "UPSTREAM_REJECTED", retryable: false },
+				error: { code: "UPSTREAM_REJECTED", retryable: true },
 			});
 		});
 

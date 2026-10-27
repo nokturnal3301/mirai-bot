@@ -8,7 +8,7 @@ import {
 	findUrl,
 	createRateLimiter,
 	normalizeUrl,
-	withHttpContext,
+	withStickyProxy,
 	type CachedMedia,
 	type ExtractionError,
 } from "lib";
@@ -27,6 +27,7 @@ import { isRemoteMediaResource, sendTelegramMedia } from "bot/telegram";
 const rateLimiter = createRateLimiter(config.rateLimit);
 const extractSingle = createSingleFlight<Flow<Media, ExtractionError>>();
 const requestStartedAt = new WeakMap<MessageContext, number>();
+const PROXY_ATTEMPTS = 2;
 
 const elapsedMs = (startedAt: number): string =>
 	`${(performance.now() - startedAt).toFixed(0)}ms`;
@@ -91,13 +92,14 @@ export const extract = async ({
 			extracted.error.retryable &&
 			env.PROXY_URL
 		) {
-			logger.info(
-				`[${extractor.platform}] retrying via proxy: ${extracted.error.code} ${extracted.error.message}`,
-			);
 			route = "proxy";
-			extracted = await withHttpContext({ forceProxy: true }, () =>
-				extractor.extract(url),
-			);
+			for (let attempt = 1; attempt <= PROXY_ATTEMPTS; attempt++) {
+				logger.info(
+					`[${extractor.platform}] retrying via proxy ${attempt}/${PROXY_ATTEMPTS}: ${extracted.error.code} ${extracted.error.message}`,
+				);
+				extracted = await withStickyProxy(() => extractor.extract(url));
+				if (extracted._tag !== "Fail" || !extracted.error.retryable) break;
+			}
 		}
 
 		logger.info(
