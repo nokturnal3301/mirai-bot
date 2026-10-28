@@ -663,4 +663,31 @@ describe("hedged strategy plans", () => {
 			value: "healthy",
 		});
 	});
+
+	test("does not open a circuit for terminal content failures", async () => {
+		clearStrategyRuntime();
+		let calls = 0;
+		const guarded = configured(
+			"content-gate",
+			async () => {
+				calls++;
+				return F.fail(
+					extractionError("UPSTREAM_REJECTED", "login required", {
+						retryable: false,
+						terminal: true,
+					}),
+				);
+			},
+			{ circuitBreaker: { failures: 1, resetAfter: 10_000 } },
+		);
+
+		for (let attempt = 0; attempt < 2; attempt++) {
+			expect(await runSequence(undefined, [guarded])).toMatchObject({
+				_tag: "Fail",
+				error: { terminal: true },
+			});
+		}
+
+		expect(calls).toBe(2);
+	});
 });

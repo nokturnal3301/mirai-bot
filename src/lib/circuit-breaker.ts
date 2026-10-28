@@ -68,6 +68,11 @@ export const completeCircuitPermit = <T>(
 		if (permit.mode === "probe") return opensCircuit(permit);
 		return undefined;
 	}
+	if (result.error.terminal) {
+		const transitioned = states.has(permit.key);
+		states.delete(permit.key);
+		return transitioned ? "closed" : undefined;
+	}
 
 	const failureCodes = permit.policy.failureCodes ?? DEFAULT_FAILURE_CODES;
 	if (!failureCodes.includes(result.error.code)) {
