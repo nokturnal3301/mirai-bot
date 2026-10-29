@@ -6,6 +6,7 @@ import { videoSourceOf } from "extractors/tiktok/utils";
 import {
 	buildTikTokMediaPlan,
 	imageUrlsOf,
+	parseTikTokItem,
 	videoUrlOf,
 } from "extractors/tiktok/utils";
 import { DOWNLOAD_CONNECTIONS } from "extractors/tiktok/constants";
@@ -14,6 +15,32 @@ const buildChallengeHtml = (wci: string, cs: string) =>
 	`<div id="wci" class="${wci}"></div><div id="cs" class="${cs}"></div>`;
 
 describe("tiktok", () => {
+	describe("parseTikTokItem", () => {
+		test("requests a Ukrainian proxy for cross-border posts", () => {
+			const html = `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify(
+				{
+					__DEFAULT_SCOPE__: {
+						"webapp.video-detail": {
+							statusCode: 10231,
+							statusMsg: "cross_border_violation",
+						},
+					},
+				},
+			)}</script>`;
+
+			expect(parseTikTokItem(html)).toEqual({
+				_tag: "Fail",
+				error: {
+					code: "UPSTREAM_REJECTED",
+					message: "cross_border_violation",
+					retryable: true,
+					terminal: false,
+					details: { upstreamStatus: 10231, proxyCountry: "ua" },
+				},
+			});
+		});
+	});
+
 	describe("solveChallenge", () => {
 		test("solves a valid challenge", async () => {
 			const cs =

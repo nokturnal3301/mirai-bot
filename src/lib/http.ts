@@ -261,7 +261,11 @@ export async function http<R extends ResponseType = "json">(
 	const ctx = getHttpContext();
 	const shouldUseProxy = (useProxy || ctx?.forceProxy) === true;
 	if (shouldUseProxy && env.PROXY_URL) {
-		fetchInit.proxy = resolveProxyUrl(env.PROXY_URL, ctx?.proxySession);
+		fetchInit.proxy = resolveProxyUrl(
+			env.PROXY_URL,
+			ctx?.proxySession,
+			ctx?.proxyCountry,
+		);
 	}
 
 	let lastError: Error | null = null;

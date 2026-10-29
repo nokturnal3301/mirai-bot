@@ -93,11 +93,18 @@ export const extract = async ({
 			env.PROXY_URL
 		) {
 			route = "proxy";
+			const requestedCountry =
+				typeof extracted.error.details?.proxyCountry === "string"
+					? extracted.error.details.proxyCountry
+					: undefined;
 			for (let attempt = 1; attempt <= PROXY_ATTEMPTS; attempt++) {
 				logger.info(
-					`[${extractor.platform}] retrying via proxy ${attempt}/${PROXY_ATTEMPTS}: ${extracted.error.code} ${extracted.error.message}`,
+					`[${extractor.platform}] retrying via proxy ${attempt}/${PROXY_ATTEMPTS}${requestedCountry ? ` (${requestedCountry})` : ""}: ${extracted.error.code} ${extracted.error.message}`,
 				);
-				extracted = await withStickyProxy(() => extractor.extract(url));
+				extracted = await withStickyProxy(
+					() => extractor.extract(url),
+					requestedCountry ? { country: requestedCountry } : undefined,
+				);
 				if (extracted._tag !== "Fail" || !extracted.error.retryable) break;
 			}
 		}

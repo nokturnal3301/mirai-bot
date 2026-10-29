@@ -33,6 +33,7 @@ export type RemoteMediaResource = {
 	httpContext?: {
 		forceProxy: boolean;
 		proxySession?: string;
+		proxyCountry?: string;
 	};
 };
 

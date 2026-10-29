@@ -73,6 +73,8 @@ export const SSRDataSchema = z.looseObject({
 		.looseObject({
 			"webapp.video-detail": z
 				.looseObject({
+					statusCode: nonNegativeNumber.optional(),
+					statusMsg: z.string().optional(),
 					itemInfo: z
 						.looseObject({
 							itemStruct: SSRItemSchema.optional(),

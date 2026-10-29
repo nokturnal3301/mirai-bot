@@ -64,9 +64,25 @@ export const parseTikTokItem = (
 	const item =
 		parsed.data.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo
 			?.itemStruct;
-	return item
-		? F.of(item)
-		: F.fail(extractionError("NO_MEDIA", "no TikTok item struct"));
+	if (item) return F.of(item);
+
+	const detail = parsed.data.__DEFAULT_SCOPE__?.["webapp.video-detail"];
+	if (detail?.statusCode === 10231) {
+		return F.fail(
+			extractionError(
+				"UPSTREAM_REJECTED",
+				detail.statusMsg || "TikTok video is restricted in this region",
+				{
+					details: {
+						upstreamStatus: detail.statusCode,
+						proxyCountry: "ua",
+					},
+				},
+			),
+		);
+	}
+
+	return F.fail(extractionError("NO_MEDIA", "no TikTok item struct"));
 };
 
 export const imageUrlsOf = (item: SSRItem): string[] =>
