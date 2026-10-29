@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	extractionError,
 	extractionErrorFrom,
+	HttpNetworkError,
 	HttpStatusError,
 	HttpTimeoutError,
 	responseTooLargeFailure,
@@ -48,6 +49,22 @@ describe("ExtractionError", () => {
 			code: "UPSTREAM_REJECTED",
 			retryable: true,
 			terminal: false,
+		});
+	});
+
+	test("classifies a network failure as a retryable upstream failure", () => {
+		const error = extractionErrorFrom(
+			new HttpNetworkError("https://example.com/resource", {
+				cause: new Error("Proxy refused to open a tunnel: 504 Gateway Timeout"),
+			}),
+		);
+
+		expect(error).toMatchObject({
+			code: "UPSTREAM_REJECTED",
+			message: "Proxy refused to open a tunnel: 504 Gateway Timeout",
+			retryable: true,
+			terminal: false,
+			details: { url: "https://example.com/resource" },
 		});
 	});
 

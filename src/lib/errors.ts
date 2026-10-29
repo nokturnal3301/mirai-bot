@@ -18,6 +18,20 @@ export class HttpTimeoutError extends Error {
 	}
 }
 
+export class HttpNetworkError extends Error {
+	readonly url: string;
+
+	constructor(url: string, options?: ErrorOptions) {
+		const message =
+			options?.cause instanceof Error
+				? options.cause.message
+				: "HTTP network failure";
+		super(message, options);
+		this.name = "HttpNetworkError";
+		this.url = url;
+	}
+}
+
 export class HttpStatusError extends Error {
 	readonly status: number;
 	readonly url: string;
@@ -104,6 +118,11 @@ export const extractionErrorFrom = (error: unknown): ExtractionError => {
 	if (isExtractionError(error)) return error;
 	if (error instanceof HttpTimeoutError) {
 		return extractionError("UPSTREAM_REJECTED", error.message);
+	}
+	if (error instanceof HttpNetworkError) {
+		return extractionError("UPSTREAM_REJECTED", error.message, {
+			details: { url: error.url },
+		});
 	}
 	if (error instanceof HttpStatusError) {
 		return extractionError("UPSTREAM_REJECTED", error.message, {

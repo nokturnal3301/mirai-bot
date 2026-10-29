@@ -1,5 +1,6 @@
 import { config, env } from "config";
 import {
+	HttpNetworkError,
 	HttpStatusError,
 	HttpTimeoutError,
 	isRetryableHttpStatus,
@@ -157,14 +158,20 @@ const fetchWithCheckedRedirects = async (
 
 	for (let redirects = 0; ; redirects++) {
 		if (!allowPrivate) assertPublicHttpUrl(currentUrl);
-		const response = await fetch(currentUrl, {
-			...init,
-			body,
-			headers,
-			method,
-			redirect: "manual",
-			signal,
-		});
+		let response: Response;
+		try {
+			response = await fetch(currentUrl, {
+				...init,
+				body,
+				headers,
+				method,
+				redirect: "manual",
+				signal,
+			});
+		} catch (error) {
+			if (signal.aborted) throw error;
+			throw new HttpNetworkError(currentUrl, { cause: error });
+		}
 
 		if (redirectMode === "manual" || !REDIRECT_STATUSES.has(response.status)) {
 			return response;

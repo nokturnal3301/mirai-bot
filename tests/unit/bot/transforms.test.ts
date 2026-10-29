@@ -1,6 +1,20 @@
 import { describe, test, expect } from "bun:test";
-import { checkFileSize, matchExtractor, detectUrl } from "bot/transforms";
+import {
+	checkFileSize,
+	detectUrl,
+	extract,
+	matchExtractor,
+} from "bot/transforms";
 import type { MessageContext } from "bot/types";
+import { env } from "config";
+import type { Extractor } from "extractors/types";
+import {
+	extractionError,
+	extractionErrorFrom,
+	F,
+	getHttpContext,
+	HttpNetworkError,
+} from "lib";
 
 const mockCtx = (text: string) =>
 	({
@@ -82,6 +96,58 @@ describe("matchExtractor", () => {
 		});
 
 		expect(result._tag).toBe("Stop");
+	});
+});
+
+describe("extract", () => {
+	test("rotates the sticky proxy after a transient network failure", async () => {
+		const previousProxyUrl = env.PROXY_URL;
+		env.PROXY_URL = "http://customer:secret@proxy.example:12321";
+		const proxySessions: string[] = [];
+		let calls = 0;
+		const extractor: Extractor = {
+			platform: "instagram",
+			match: () => true,
+			extract: async () => {
+				calls++;
+				const context = getHttpContext();
+				if (!context) {
+					return F.fail(
+						extractionError("UPSTREAM_REJECTED", "regional content gate"),
+					);
+				}
+
+				proxySessions.push(context.proxySession ?? "");
+				if (proxySessions.length === 1) {
+					return F.fail(
+						extractionErrorFrom(
+							new HttpNetworkError("https://www.instagram.com/p/test", {
+								cause: new Error(
+									"Proxy refused to open a tunnel: 504 Gateway Timeout",
+								),
+							}),
+						),
+					);
+				}
+
+				return F.of({ type: "text", caption: { text: "ok" } });
+			},
+		};
+
+		try {
+			const result = await extract({
+				ctx: mockCtx(""),
+				url: `https://example.com/${crypto.randomUUID()}`,
+				extractor,
+			});
+
+			expect(result._tag).toBe("Continue");
+			expect(calls).toBe(3);
+			expect(proxySessions).toHaveLength(2);
+			expect(proxySessions[0]).not.toBe(proxySessions[1]);
+		} finally {
+			env.PROXY_URL = previousProxyUrl;
+		}
 	});
 });
 

@@ -3,6 +3,7 @@ export { download, type DownloadOptions } from "./download";
 export {
 	extractionError,
 	extractionErrorFrom,
+	HttpNetworkError,
 	HttpStatusError,
 	HttpTimeoutError,
 	isExtractionError,

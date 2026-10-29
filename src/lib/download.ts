@@ -1,6 +1,7 @@
 import { config } from "config";
 import {
 	extractionError,
+	HttpNetworkError,
 	HttpStatusError,
 	HttpTimeoutError,
 	isExtractionError,
@@ -74,6 +75,7 @@ export const download = async (
 		if (
 			isResponseTooLargeFailure(error) ||
 			isExtractionError(error) ||
+			error instanceof HttpNetworkError ||
 			error instanceof HttpStatusError ||
 			error instanceof HttpTimeoutError
 		) {

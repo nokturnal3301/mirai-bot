@@ -1,5 +1,9 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { HttpStatusError, HttpTimeoutError } from "lib/errors";
+import {
+	HttpNetworkError,
+	HttpStatusError,
+	HttpTimeoutError,
+} from "lib/errors";
 import { http } from "lib/http";
 
 let server: ReturnType<typeof Bun.serve>;
@@ -211,6 +215,16 @@ describe("http", () => {
 				allowPrivate: true,
 			}),
 		).rejects.toBeInstanceOf(HttpTimeoutError);
+	});
+
+	test("wraps transport failures as structured network errors", async () => {
+		await expect(
+			http("http://127.0.0.1:1/unavailable", {
+				attempts: 1,
+				timeout: 1_000,
+				allowPrivate: true,
+			}),
+		).rejects.toBeInstanceOf(HttpNetworkError);
 	});
 
 	test("passes custom headers", async () => {
