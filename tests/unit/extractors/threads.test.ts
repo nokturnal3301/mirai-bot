@@ -116,6 +116,52 @@ describe("threads", () => {
 		}
 	});
 
+	test("extracts linked inline media from a text post", async () => {
+		const postCode = "INLINE";
+		const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(
+				`<script type="application/json" data-sjs>${JSON.stringify({
+					code: postCode,
+					caption: { text: "post text" },
+					text_post_app_info: {
+						linked_inline_media: {
+							video_versions: [{ url: "https://cdn.test/inline.mp4" }],
+							original_width: 1280,
+							original_height: 720,
+						},
+					},
+				})}</script>`,
+			),
+		);
+
+		try {
+			const result = await execute({
+				tag: "threads-test",
+				input: `https://www.threads.com/@user/post/${postCode}`,
+				plan: sequence([ssr.with({ kind: "metadata", cost: "normal" })]),
+			}).run();
+
+			expect(result).toMatchObject({
+				_tag: "Continue",
+				value: {
+					type: "video",
+					width: 1280,
+					height: 720,
+					caption: { text: "post text" },
+					source: {
+						kind: "fallback",
+						sources: [
+							{ url: "https://cdn.test/inline.mp4" },
+							{ url: "https://cdn.test/inline.mp4" },
+						],
+					},
+				},
+			});
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
 	describe("ThreadsPostSchema", () => {
 		test("parses video post", () => {
 			const parsed = ThreadsPostSchema.parse({

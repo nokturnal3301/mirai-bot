@@ -59,6 +59,7 @@ export const ThreadsPostSchema = z.looseObject({
 		.nullish(),
 	text_post_app_info: z
 		.looseObject({
+			linked_inline_media: QuotedAttachmentSchema.nullish(),
 			share_info: z
 				.looseObject({
 					quoted_attachment_post: QuotedAttachmentSchema.nullish(),

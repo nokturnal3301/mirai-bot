@@ -145,8 +145,10 @@ const mediaSource = (post: ThreadsPost): ThreadsPost => {
 		!!post.video_versions?.length ||
 		!!post.image_versions2?.candidates?.length;
 	if (hasMedia) return post;
-	const quoted = post.text_post_app_info?.share_info?.quoted_attachment_post;
-	return (quoted as ThreadsPost) ?? post;
+	const embedded =
+		post.text_post_app_info?.linked_inline_media ??
+		post.text_post_app_info?.share_info?.quoted_attachment_post;
+	return (embedded as ThreadsPost) ?? post;
 };
 
 const buildPlan = (post: ThreadsPost): Flow<MediaPlan, ExtractionError> => {
