@@ -16,7 +16,7 @@ const ctx = {
 } as unknown as MessageContext;
 
 describe("rich messages", () => {
-	test("shows the platform before the author above closed details without buttons", () => {
+	test("signs media with a quiet footer above closed details without buttons", () => {
 		const html = renderCard(
 			{
 				source: "instagram",
@@ -26,15 +26,36 @@ describe("rich messages", () => {
 			[{ type: "video", media: "file-id" }],
 		);
 		expect(html).toContain('<video src="tg://video?id=media-0"></video>');
-		expect(html).toContain("</tg-emoji> Instagram · <b>@creator</b>");
-		expect(html).toContain(`emoji-id="${SOURCE_ICONS.instagram}"`);
+		expect(html).toContain(
+			`<footer><tg-emoji emoji-id="${SOURCE_ICONS.instagram}">✴️</tg-emoji> @creator</footer>`,
+		);
 		expect(html).toContain(
 			"<details><summary>Description</summary><p>Claude. This is Codex.<br><br>#claude #ai</p></details>",
 		);
 		expect(html).not.toContain("<details open");
-		expect(html.indexOf("<video")).toBeLessThan(html.indexOf("<details>"));
-		expect(html.indexOf("@creator")).toBeLessThan(html.indexOf("<details>"));
+		expect(html.indexOf("<video")).toBeLessThan(html.indexOf("<footer>"));
+		expect(html.indexOf("<footer>")).toBeLessThan(html.indexOf("<details>"));
 		expect(html).not.toContain("<tg-button");
+	});
+
+	test("adds duration and quality for a single video", () => {
+		const signed = (duration: number) =>
+			renderCard({ source: "tiktok", author: "creator" }, [
+				{
+					type: "video",
+					media: "file-id",
+					width: 720,
+					height: 1280,
+					duration,
+				},
+			]);
+		expect(signed(19)).toContain("</tg-emoji> @creator · 0:19 · 720p</footer>");
+		expect(signed(3725)).toContain("@creator · 1:02:05 · 720p</footer>");
+		expect(
+			renderCard({ author: "creator" }, [
+				{ type: "photo", media: "file-id", width: 1080, height: 1350 },
+			]),
+		).toContain("<footer>@creator</footer>");
 	});
 
 	test("escapes untrusted text and omits empty details", () => {
@@ -104,7 +125,8 @@ describe("rich messages", () => {
 			expect(await (form.get("media-0") as File).text()).toBe("video bytes");
 			expect(await (form.get("media-1") as File).text()).toBe("photo bytes");
 			const rich = JSON.parse(String(form.get("rich_message")));
-			expect(rich.html).toContain("<tg-slideshow>");
+			expect(rich.html).toContain("<tg-collage>");
+			expect(rich.html).not.toContain("0:12");
 			expect(rich.media).toEqual([
 				{
 					id: "media-0",

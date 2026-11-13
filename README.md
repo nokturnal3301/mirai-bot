@@ -21,7 +21,7 @@ Only public content is supported. The bot caps each downloaded media file at
 50 MB; Telegram also applies its own per-method limits. Carousel extraction
 considers up to 20 items and retains up to 50 MB of downloaded photo/video data,
 skipping unavailable or over-budget items. Carousels are sent as native rich
-message slideshows, with up to 50 attachments per message.
+message collages, with up to 50 attachments per message.
 
 ## Highlights
 
@@ -64,14 +64,16 @@ Videos, photos, carousels and text posts use Telegram's
 [Rich Messages](https://core.telegram.org/bots/api/rich-messages.md):
 
 ```text
-[ Video / photo / slideshow ]
-[platform logo] Instagram · @author
+[ Video / photo / collage ]
+[platform logo] @author · 0:19 · 720p
 ▸ Description
 ```
 
-The description and hashtags are inside a native `<details>` block, closed by
-default. Tapping the description header expands it; tapping again collapses it.
-Media, platform and author stay visible. Empty descriptions
+The media is signed with a quiet `<footer>`: the platform logo, the author and,
+for a single video, its duration and quality. Carousels use a `<tg-collage>`
+grid. The description and hashtags are inside a native `<details>` block, closed
+by default. Tapping the description header expands it; tapping again collapses
+it. Media and footer stay visible. Empty descriptions
 omit the disclosure. Very long descriptions continue in additional collapsed
 cards rather than being truncated. Audio tracks use the standard audio player.
 

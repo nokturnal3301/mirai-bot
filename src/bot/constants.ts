@@ -13,15 +13,6 @@ export const MESSAGES = {
 
 import type { Platform } from "extractors/types";
 
-export const SOURCE_LABELS: Record<Platform, string> = {
-	instagram: "Instagram",
-	tiktok: "TikTok",
-	youtube: "YouTube",
-	threads: "Threads",
-	twitter: "X",
-	reddit: "Reddit",
-};
-
 // Matching platform logos from https://t.me/addemoji/app_set.
 // IDs and artwork verified with getStickerSet; keep IDs as strings.
 export const SOURCE_ICONS: Record<Platform, string> = {

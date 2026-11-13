@@ -386,7 +386,7 @@ describe("sendMedia", () => {
 		expect(call?.args[1]).toEqual([{ type: "photo", media: media.data }]);
 	});
 
-	test("sends mixed carousels as a rich slideshow", async () => {
+	test("sends mixed carousels as a rich collage", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const blob = new Blob(["x"]);
@@ -403,7 +403,7 @@ describe("sendMedia", () => {
 		expect(result._tag).toBe("Continue");
 		const groupCall = calls.find((c) => c.method === "sendRichMessage");
 		expect(groupCall).toBeDefined();
-		expect(groupCall?.args[0]).toContain("<tg-slideshow>");
+		expect(groupCall?.args[0]).toContain("<tg-collage>");
 		const items = groupCall?.args[1] as rich.RichMedia[];
 		expect(items).toEqual([
 			{ type: "photo", media: "https://cdn/1.jpg" },
