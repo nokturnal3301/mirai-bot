@@ -31,7 +31,7 @@ export const escapeHtml = (value: string): string =>
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&#39;");
 
-// Leave room for author, platform, summary and button within 32768 characters.
+// Leave room for author, platform and summary within 32768 characters.
 const DESCRIPTION_CHUNK = 30_000;
 
 export const descriptionChunks = (caption?: Caption): string[] => {
@@ -44,7 +44,6 @@ export const descriptionChunks = (caption?: Caption): string[] => {
 };
 
 export const renderCard = (
-	url: string,
 	caption?: Caption,
 	media: RichMedia[] = [],
 	description = descriptionChunks(caption)[0],
@@ -68,12 +67,11 @@ export const renderCard = (
 		source && icon
 			? `<tg-emoji emoji-id="${icon}">✴️</tg-emoji> ${SOURCE_LABELS[source]}`
 			: "";
-	const header = [authorLine, platform].filter(Boolean).join(" · ");
+	const header = [platform, authorLine].filter(Boolean).join(" · ");
 	const details = description
 		? `<details><summary>Description</summary><p>${escapeHtml(description).replace(/\r?\n/g, "<br>")}</p></details>`
 		: "";
-	const button = `<tg-button-row><tg-button type="url" url="${escapeHtml(url)}">Original ↗</tg-button></tg-button-row>`;
-	return [gallery, header ? `<p>${header}</p>` : "", details, button]
+	return [gallery, header ? `<p>${header}</p>` : "", details]
 		.filter(Boolean)
 		.join("\n");
 };
@@ -143,10 +141,9 @@ export const richFileId = (
 
 export const sendDescriptionOverflow = async (
 	ctx: MessageContext,
-	url: string,
 	caption?: Caption,
 ): Promise<void> => {
 	for (const chunk of descriptionChunks(caption).slice(1)) {
-		await sendRichMessage(ctx, renderCard(url, caption, [], chunk));
+		await sendRichMessage(ctx, renderCard(caption, [], chunk));
 	}
 };

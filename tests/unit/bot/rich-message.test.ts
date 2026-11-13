@@ -16,9 +16,8 @@ const ctx = {
 } as unknown as MessageContext;
 
 describe("rich messages", () => {
-	test("keeps media, author, platform and original outside closed details", () => {
+	test("shows the platform before the author above closed details without buttons", () => {
 		const html = renderCard(
-			"https://instagram.com/p/example?a=1&b=2",
 			{
 				source: "instagram",
 				author: "@creator",
@@ -27,7 +26,7 @@ describe("rich messages", () => {
 			[{ type: "video", media: "file-id" }],
 		);
 		expect(html).toContain('<video src="tg://video?id=media-0"></video>');
-		expect(html).toContain("<b>@creator</b> · <tg-emoji");
+		expect(html).toContain("</tg-emoji> Instagram · <b>@creator</b>");
 		expect(html).toContain(`emoji-id="${SOURCE_ICONS.instagram}"`);
 		expect(html).toContain(
 			"<details><summary>Description</summary><p>Claude. This is Codex.<br><br>#claude #ai</p></details>",
@@ -35,16 +34,11 @@ describe("rich messages", () => {
 		expect(html).not.toContain("<details open");
 		expect(html.indexOf("<video")).toBeLessThan(html.indexOf("<details>"));
 		expect(html.indexOf("@creator")).toBeLessThan(html.indexOf("<details>"));
-		expect(html.indexOf("</details>")).toBeLessThan(
-			html.indexOf("<tg-button-row>"),
-		);
-		expect(html).toContain(
-			'url="https://instagram.com/p/example?a=1&amp;b=2">Original ↗',
-		);
+		expect(html).not.toContain("<tg-button");
 	});
 
-	test("escapes untrusted text and attribute values and omits empty details", () => {
-		const html = renderCard('https://example.com/?q="<x>', {
+	test("escapes untrusted text and omits empty details", () => {
+		const html = renderCard({
 			author: '<script>&"',
 			text: '</details><video src="https://evil.example"/>',
 		});
@@ -53,10 +47,9 @@ describe("rich messages", () => {
 		expect(html).toContain(
 			"&lt;/details&gt;&lt;video src=&quot;https://evil.example&quot;/&gt;",
 		);
-		expect(html).toContain('url="https://example.com/?q=&quot;&lt;x&gt;"');
-		expect(
-			renderCard("https://example.com", { source: "youtube", text: "  " }),
-		).not.toContain("<details");
+		expect(renderCard({ source: "youtube", text: "  " })).not.toContain(
+			"<details",
+		);
 	});
 
 	test("chunks long Unicode descriptions without losing text or exceeding rich limits", () => {
@@ -68,9 +61,7 @@ describe("rich messages", () => {
 		);
 		for (const chunk of chunks) {
 			expect(chunk.isWellFormed()).toBe(true);
-			expect(renderCard("https://example.com", undefined, [], chunk)).toContain(
-				"<details>",
-			);
+			expect(renderCard(undefined, [], chunk)).toContain("<details>");
 		}
 	});
 
@@ -100,7 +91,7 @@ describe("rich messages", () => {
 			];
 			const message = await sendRichMessage(
 				ctx,
-				renderCard("https://example.com", undefined, media),
+				renderCard(undefined, media),
 				media,
 			);
 			const [url, init] = fetchSpy.mock.calls[0] ?? [];
@@ -154,7 +145,7 @@ describe("rich messages", () => {
 			const media = [{ type: "photo" as const, media: "cached-photo" }];
 			const message = await sendRichMessage(
 				{ chatId: 321 } as MessageContext,
-				renderCard("https://example.com", undefined, media),
+				renderCard(undefined, media),
 				media,
 			);
 			const params = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
@@ -179,7 +170,7 @@ describe("rich messages", () => {
 			await expect(
 				sendRichMessage(
 					ctx,
-					renderCard("https://example.com", {
+					renderCard({
 						source: "instagram",
 						text: "#test",
 					}),
@@ -196,7 +187,7 @@ describe("rich messages", () => {
 			new Error("connection reset"),
 		);
 		try {
-			const html = renderCard("https://example.com", { source: "instagram" });
+			const html = renderCard({ source: "instagram" });
 			await expect(sendRichMessage(ctx, html)).rejects.toThrow(
 				"connection reset",
 			);

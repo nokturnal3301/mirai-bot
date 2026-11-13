@@ -25,8 +25,8 @@ message slideshows, with up to 50 attachments per message.
 
 ## Highlights
 
-- Native Telegram rich cards: media first, author and platform logo, a collapsed
-  description (including hashtags), and an **Original ↗** button.
+- Native Telegram rich cards: media first, platform logo and name, author,
+  and a collapsed description (including hashtags).
 - No third-party downloader service, `yt-dlp`, or headless browser. Extraction
   talks directly to platform pages, internal endpoints, and media CDNs.
 - Native YouTube BotGuard flow for minting content-bound PO tokens, with an
@@ -65,14 +65,13 @@ Videos, photos, carousels and text posts use Telegram's
 
 ```text
 [ Video / photo / slideshow ]
-@author · [platform logo] Instagram
+[platform logo] Instagram · @author
 ▸ Description
-[ Original ↗ ]
 ```
 
 The description and hashtags are inside a native `<details>` block, closed by
-default. Tapping the description header expands it; tapping again collapses it. Media,
-author, platform and original-link button stay visible. Empty descriptions
+default. Tapping the description header expands it; tapping again collapses it.
+Media, platform and author stay visible. Empty descriptions
 omit the disclosure. Very long descriptions continue in additional collapsed
 cards rather than being truncated. Audio tracks use the standard audio player.
 

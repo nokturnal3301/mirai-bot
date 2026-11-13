@@ -174,7 +174,7 @@ const sendVideo = async (
 		const attachments = [{ ...params, media: input }];
 		return sendRichMessage(
 			ctx,
-			renderCard(url, media.caption, attachments),
+			renderCard(media.caption, attachments),
 			attachments,
 		);
 	};
@@ -244,7 +244,7 @@ const sendVideo = async (
 	}
 
 	logger.info(`[send] video delivered via ${route} ${sizeLabel(bytes)}`);
-	await sendDescriptionOverflow(ctx, url, media.caption);
+	await sendDescriptionOverflow(ctx, media.caption);
 };
 
 const sendPhoto = async (
@@ -260,7 +260,7 @@ const sendPhoto = async (
 	const attachments = [{ type: "photo" as const, media: media.data }];
 	const message = await sendRichMessage(
 		ctx,
-		renderCard(url, media.caption, attachments),
+		renderCard(media.caption, attachments),
 		attachments,
 	);
 	const fileId = richFileId(message, "photo");
@@ -274,7 +274,7 @@ const sendPhoto = async (
 		});
 	}
 
-	await sendDescriptionOverflow(ctx, url, media.caption);
+	await sendDescriptionOverflow(ctx, media.caption);
 };
 
 const sendAudio = async (
@@ -296,7 +296,6 @@ const sendAudio = async (
 			duration: media.duration,
 			title: media.title,
 			performer: media.performer,
-			reply_markup: { inline_keyboard: [[{ text: "Original ↗", url }]] },
 		},
 	);
 
@@ -314,19 +313,17 @@ const sendAudio = async (
 
 const sendText = async (
 	ctx: MessageContext,
-	url: string,
 	media: Extract<Media, { type: "text" }>,
 ): Promise<void> => {
 	logger.info(`[send] text @${media.caption.author ?? "?"}`);
-	await sendRichMessage(ctx, renderCard(url, media.caption));
-	await sendDescriptionOverflow(ctx, url, media.caption);
+	await sendRichMessage(ctx, renderCard(media.caption));
+	await sendDescriptionOverflow(ctx, media.caption);
 };
 
 const RICH_MEDIA_LIMIT = 50;
 
 const sendCarousel = async (
 	ctx: MessageContext,
-	url: string,
 	media: Extract<Media, { type: "carousel" }>,
 ): Promise<void> => {
 	void bestEffortTelegram("carousel chat action", () =>
@@ -356,7 +353,7 @@ const sendCarousel = async (
 			}));
 		await sendRichMessage(
 			ctx,
-			renderCard(url, offset === 0 ? media.caption : undefined, attachments),
+			renderCard(offset === 0 ? media.caption : undefined, attachments),
 			attachments,
 		);
 	}
@@ -370,7 +367,7 @@ const sendCarousel = async (
 		});
 	}
 
-	await sendDescriptionOverflow(ctx, url, media.caption);
+	await sendDescriptionOverflow(ctx, media.caption);
 };
 
 export const sendTelegramMedia = async (
@@ -386,9 +383,9 @@ export const sendTelegramMedia = async (
 		case "audio":
 			return sendAudio(ctx, url, media);
 		case "carousel":
-			return sendCarousel(ctx, url, media);
+			return sendCarousel(ctx, media);
 		case "text":
-			return sendText(ctx, url, media);
+			return sendText(ctx, media);
 		default:
 			media satisfies never;
 	}
