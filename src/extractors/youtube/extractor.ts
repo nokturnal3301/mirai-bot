@@ -1,9 +1,28 @@
-import type { Extractor } from "extractors/types";
-import { materializeMedia } from "extractors/media";
-import { execute, matchesHttpUrl, retry, sequence, withStickyProxy } from "lib";
+import type { Extractor, Media } from "extractors/types";
+import { materializeMedia, type MediaPlan } from "extractors/media";
+import {
+	chain,
+	execute,
+	matchesHttpUrl,
+	retry,
+	sequence,
+	withStickyProxy,
+	type Strategy,
+} from "lib";
 import { adaptive } from "extractors/youtube/strategies/adaptive";
 import { combined } from "extractors/youtube/strategies/combined";
 import { SESSION_ROLLS } from "./constants";
+
+const withDownload = (
+	strategy: Strategy<string, MediaPlan>,
+): Strategy<string, Media> =>
+	Object.freeze({
+		...strategy,
+		execute: (url, context) =>
+			chain(strategy.execute(url, context))
+				.pipe((plan) => materializeMedia(plan, context.signal))
+				.run(),
+	});
 
 export const youtube: Extractor = {
 	platform: "youtube",
@@ -15,12 +34,12 @@ export const youtube: Extractor = {
 					tag: "youtube",
 					input: url,
 					plan: sequence([
-						combined.with({ kind: "direct", cost: "cheap" }),
-						adaptive.with({ kind: "fallback", cost: "expensive" }),
+						withDownload(combined.with({ kind: "direct", cost: "cheap" })),
+						withDownload(
+							adaptive.with({ kind: "fallback", cost: "expensive" }),
+						),
 					]),
-				})
-					.pipe(materializeMedia)
-					.run(),
+				}).run(),
 			),
 		),
 };

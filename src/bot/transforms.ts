@@ -79,7 +79,7 @@ export const extract = async ({
 
 	if (cached) {
 		logger.info(`[cache] hit ${normalizeUrl(url)} in ${elapsedMs(startedAt)}`);
-		const media = mediaFromCache(cached);
+		const media = withSource(mediaFromCache(cached), extractor.platform);
 		return F.of({ ctx, url, media });
 	}
 

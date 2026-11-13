@@ -17,12 +17,16 @@ Send a supported link to the bot and it returns the media directly in Telegram.
 | Twitter / X | Tweet status links from `twitter.com` and `x.com`                                | Videos, photos, animated GIFs, multi-photo posts, text-only tweets        |
 | Reddit      | Post, share, `redd.it`, `i.redd.it`, and `v.redd.it` links                       | Images, galleries, native videos with audio, text and external-link posts |
 
-Only public content is supported. Telegram's cloud Bot API limits uploads to
-50 MB. Each media group can contain at most 10 items, so longer carousels are
-split across multiple sends.
+Only public content is supported. The bot caps each downloaded media file at
+50 MB; Telegram also applies its own per-method limits. Carousel extraction
+considers up to 20 items and retains up to 50 MB of downloaded photo/video data,
+skipping unavailable or over-budget items. Carousels are sent as native rich
+message slideshows, with up to 50 attachments per message.
 
 ## Highlights
 
+- Native Telegram rich cards: media first, author and platform logo, a collapsed
+  description (including hashtags), and an **Original ↗** button.
 - No third-party downloader service, `yt-dlp`, or headless browser. Extraction
   talks directly to platform pages, internal endpoints, and media CDNs.
 - Native YouTube BotGuard flow for minting content-bound PO tokens, with an
@@ -32,10 +36,12 @@ split across multiple sends.
 - Crawler-facing SSR extraction for anonymous Instagram and Threads posts.
 - DASH parsing plus parallel ranged downloads and FFmpeg muxing when video and
   audio are published as separate streams.
-- Ordered extraction strategies, retrying HTTP client, and an optional proxy
-  rerun after a direct extraction failure.
-- Bounded media downloads that stop at Telegram's size limit, plus single-flight
-  coalescing for concurrent requests to the same post.
+- Sequential and hedged extraction strategies: delayed alternatives can race
+  slow requests, with adaptive delays and circuit breakers on selected routes.
+- Retrying HTTP client, optional proxy reruns, bounded response bodies, and
+  download deadlines that cover both metadata probes and media transfer.
+- Single-flight coalescing for concurrent requests to the same post and reuse
+  of the first successful video upload's Telegram `file_id` across chats.
 - Optional 30-day Redis cache of Telegram `file_id` values for instant repeat
   delivery of individual videos, photos, and audio.
 - Custom `Flow` result type for a typed, railway-oriented bot pipeline, plus a
@@ -45,12 +51,40 @@ split across multiple sends.
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.0 or newer
+- [Bun](https://bun.sh) 1.3.2 or newer
 - [FFmpeg](https://ffmpeg.org) for split video/audio streams
 - A Telegram bot token
 - Redis and an HTTP(S) proxy are optional
 
 The Docker image installs FFmpeg automatically.
+
+## Message appearance
+
+Videos, photos, carousels and text posts use Telegram's
+[Rich Messages](https://core.telegram.org/bots/api/rich-messages.md):
+
+```text
+[ Video / photo / slideshow ]
+@author · [platform logo] Instagram
+▸ Description
+[ Original ↗ ]
+```
+
+The description and hashtags are inside a native `<details>` block, closed by
+default. Tapping the description header expands it; tapping again collapses it. Media,
+author, platform and original-link button stay visible. Empty descriptions
+omit the disclosure. Very long descriptions continue in additional collapsed
+cards rather than being truncated. Audio tracks use the standard audio player.
+
+Platform logos use verified custom emoji from the public
+[tech logos](https://t.me/addemoji/app_set) pack. IDs live
+in `src/bot/constants.ts`; no pack installation or runtime lookup is needed.
+Telegram requires a Premium bot owner for custom emoji in private/group chats,
+or an additional username purchased on Fragment.
+
+Use a current Telegram client to view rich messages. These cards are forwardable;
+they do not use protected HTML widgets. `src/bot/rich-message.ts` handles the
+new API method and multipart media uploads until GramIO supports them natively.
 
 ## Quick start
 
@@ -65,8 +99,8 @@ Create `.env` in the project root:
 ```dotenv
 TELEGRAM_BOT_TOKEN=your_token_here
 
-# Optional: used by proxy-aware platform requests and as a full extraction
-# fallback when the direct attempt fails.
+# Optional: used by YouTube/Reddit requests and for retryable extraction
+# failures on other platforms.
 PROXY_URL=http://user:pass@host:port
 
 # Optional: caches Telegram file_id values for 30 days.
@@ -113,57 +147,95 @@ PROXY_URL=http://user:pass@host:port \
 
 ```bash
 bun run lint
-bunx tsc --noEmit
-bun test
+bun run typecheck
+TELEGRAM_BOT_TOKEN=test REDIS_URL='' PROXY_URL='' bun test
+
+# Include a coverage report:
+TELEGRAM_BOT_TOKEN=test REDIS_URL='' PROXY_URL='' bun test --coverage
 ```
 
-The GitHub Actions pipeline runs lint and tests on pull requests. Pushes to
-`master` additionally build the image, publish it to GHCR, and deploy it to the
-configured VPS.
+Tests use local HTTP servers and mocked platform responses, Telegram calls,
+and FFmpeg processes. Rich-card tests cover collapsed content, escaping,
+multipart attachments, API error handling and concurrent `file_id` reuse.
+They do not need real credentials, Redis, a proxy, or FFmpeg installed.
+Integration tests cover URL routing and the YouTube
+metadata → download → mux fallback path. Live platform availability depends on
+upstream behavior and the source IP.
+
+The GitHub Actions pipeline runs lint, typecheck, and tests on pull requests.
+Pushes to `master` additionally build the image, publish it to GHCR, and deploy
+the commit-tagged image to the configured VPS.
 
 ## Request pipeline
 
 1. Find the first HTTP(S) URL in an incoming Telegram message.
 2. Match it against the extractor registry and apply the per-user rate limit.
 3. Return a cached Telegram `file_id` when Redis has a matching entry.
-4. Run the platform's extraction strategies in order until one succeeds.
-5. If extraction fails and `PROXY_URL` is configured, rerun the complete
-   extractor inside a forced-proxy context.
-6. Enforce the 50 MB limit while downloading media and stop terminal failures
-   without retrying another strategy or the proxy route.
-7. Dispatch the typed media result to the matching Telegram method, splitting
-   long carousels into valid media groups.
+4. Run the platform's sequential or hedged strategy plan and materialize the
+   selected media. Concurrent requests for the same normalized URL share this
+   work. YouTube includes downloading in each strategy, so a failed combined
+   download can fall back to adaptive streams.
+5. For a retryable extraction failure, make up to two additional attempts with
+   fresh sticky proxy sessions when `PROXY_URL` is configured. YouTube also has
+   its own route retries; some CDN downloads explicitly try a direct connection
+   before the proxy.
+6. Enforce download size limits and deadlines. Terminal errors stop the
+   extraction strategy runner and whole-extractor proxy retries.
+7. Send a rich card with embedded media and collapsed description, or a standard
+   audio message. Read returned rich media blocks to cache their `file_id`.
 
 The rate limiter currently allows five supported-link requests per user per
 minute. Unsupported links and messages without URLs are ignored.
+
+### Resource limits
+
+- Text, JSON, and text-with-headers responses default to a 5 MB body limit.
+  Buffered binary responses default to 50 MB. An explicit `maxBytes` overrides
+  these limits; streaming reads stop as soon as they exceed the limit.
+- Ordinary HTTP attempts have a 30-second timeout unless overridden. Raw
+  responses hand body reading to the caller, which owns its limits and deadline.
+- Ranged downloads have an overall deadline from the start of the operation,
+  including probes and body reads when a server ignores `Range`. By default it
+  is capped at 90 seconds and adjusted to the known size and target minimum
+  speed; an explicit download timeout overrides that budget.
+- FFmpeg jobs are limited to two concurrent operations, with a 120-second
+  deadline covering queueing, input downloads, and muxing.
+
+Limits are configured in `src/config/app.ts` and the relevant download helpers.
 
 ## Extraction details
 
 ### Instagram
 
-Instagram uses one `ssr` strategy. It requests crawler-facing HTML with a
-Googlebot user agent and searches the embedded `data-sjs` JSON for the node that
-matches the post shortcode.
+Instagram races four metadata strategies with staggered starts:
 
-- `video_versions` produces a regular video.
-- `image_versions2` produces a photo.
-- `carousel_media` produces a mixed photo/video carousel.
-- `video_dash_manifest` is parsed and muxed; if that fails, the extractor falls
-  back to a combined `video_versions` URL.
+- `embed` reads the captioned embed page immediately.
+- `ssr` reads crawler-facing HTML after an adaptive delay and searches embedded
+  `data-sjs` JSON for the post.
+- `mobile` queries the mobile media-info endpoint after 1.5 seconds.
+- `graphql` obtains page tokens and queries the logged-out GraphQL endpoint
+  after 2.5 seconds.
 
-Instagram sometimes returns HTML without a usable media node or without a
-complete DASH manifest to datacenter IPs. When a proxy is configured, the SSR
-strategy makes up to three proxy attempts before failing.
+Definite failures can start alternatives earlier. The first successful media
+plan wins and cancels the remaining metadata requests. SSR, mobile, and GraphQL
+have circuit breakers for repeated upstream failures.
+
+The normalized result supports videos, photos, and mixed carousels. DASH video
+selection prefers H.264 within the 720p cap, then muxes it with audio. Combined
+video URLs provide a fallback. Video downloads try the direct CDN route first
+and retain the proxy route as a fallback.
 
 ### YouTube Shorts
 
 The bot accepts Shorts URLs and calls the InnerTube player endpoint. The
 `combined` strategy first tries a stream that already contains video and audio.
-The `adaptive` strategy is a fallback: it selects separate streams up to 1080p
-and muxes them with FFmpeg.
+The `adaptive` strategy runs if no combined format is usable or its download
+fails with a non-terminal error. It selects separate streams, preferring H.264
+video up to 1080p and original audio, and muxes them with FFmpeg. A terminal size
+failure stops the attempt.
 
-Player requests cascade through `android_vr`, `tv_simply`, `ios`, and `mweb`.
-Clients that require a PO token use a native BotGuard implementation:
+Player requests try `visionos`, then `web_embedded`, and finally `ios` when a
+PO token is available. The iOS client uses a native BotGuard implementation:
 
 1. Fetch and decode the BotGuard challenge.
 2. Evaluate the challenge program in JSDOM and produce a snapshot.
@@ -171,13 +243,19 @@ Clients that require a PO token use a native BotGuard implementation:
 4. Mint a content-bound PO token for the video ID.
 5. Attach the token to the InnerTube player request.
 
-The token minter, YouTube session, and player responses are cached in memory.
-No YouTube account or cookies are required, but availability still depends on
-the source IP, video restrictions, and upstream client behavior.
+Both strategies share the first player response within a route attempt. Up to
+three route attempts are made for retryable failures, each with a fresh sticky
+proxy session when a proxy is configured. Downloads stay inside that session.
+
+The token minter, visitor session, and player responses are cached in memory;
+player responses are keyed by route. No YouTube account or cookies are required,
+but availability still depends on the source IP, video restrictions, and
+upstream client behavior.
 
 ### TikTok
 
-TikTok tries `web` and then `ssr`:
+TikTok starts `web` immediately and hedges with `ssr` after an adaptive delay
+of 100–600 ms, or earlier when `web` fails:
 
 - `web` resolves direct and short links, parses hydration JSON, and downloads
   media with cookies returned by the page response.
@@ -186,7 +264,9 @@ TikTok tries `web` and then `ssr`:
 
 Video posts return a video with author and description. Photo posts return a
 carousel and, when available, the original track as a separate Telegram audio
-message.
+message. Video selection prefers H.264 renditions within a 720p / 16 MB latency
+budget when available. Video bytes are downloaded directly first, with a proxy
+fallback, even when metadata was fetched through a proxy.
 
 ### Threads
 
@@ -204,8 +284,9 @@ so the highest variant that fits Telegram's 50 MB limit can be selected.
 
 ### Reddit
 
-Reddit tries `vredd` and then `json`:
+Reddit tries `image`, `vredd`, and then `json`, skipping inapplicable strategies:
 
+- `image` downloads bare `i.redd.it` image links directly.
 - `vredd` handles bare `v.redd.it` URLs by parsing the DASH manifest and muxing
   its best video representation with audio when available.
 - `json` resolves post/share/short links, fetches the public `.json` listing,
@@ -222,12 +303,12 @@ failure.
 src/
 |-- bot/           # GramIO handlers, Flow transforms, Telegram media dispatch
 |-- config/        # Zod environment schema and application limits
-|-- extractors/    # Platform registry and platform-specific strategies
-`-- lib/           # Flow, HTTP, proxy context, FFmpeg, Redis cache, utilities
+|-- extractors/    # Platform strategies, typed media plans, materialization
+`-- lib/           # Flow, strategy execution, HTTP/downloads, FFmpeg, cache
 
 tests/
 |-- unit/          # Pipeline, library, registry, and extractor tests
-`-- integration/   # URL detection and extractor routing
+`-- integration/   # URL routing and YouTube download/mux fallback
 ```
 
 ## License

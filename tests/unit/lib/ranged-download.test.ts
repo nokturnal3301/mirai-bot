@@ -4,6 +4,60 @@ import { downloadInRanges } from "lib/ranged-download";
 const URL = "https://media.example/video";
 
 describe("ranged download", () => {
+	test.each([
+		200, 206,
+	])("keeps the deadline active through a stalled %i body", async (status) => {
+		let aborted = false;
+		const parent = new AbortController();
+		const guard = setTimeout(() => parent.abort("test guard expired"), 500);
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+			_input,
+			init,
+		) => {
+			const range = new Headers(init?.headers).get("range");
+			if (status === 206 && range === "bytes=0-0") {
+				return new Response(new Uint8Array([1]), {
+					status: 206,
+					headers: { "Content-Range": "bytes 0-0/3" },
+				});
+			}
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new Uint8Array([1]));
+						init?.signal?.addEventListener(
+							"abort",
+							() => {
+								aborted = true;
+								controller.error(new Error(String(init.signal?.reason)));
+							},
+							{ once: true },
+						);
+					},
+				}),
+				{ status },
+			);
+		}) as typeof fetch);
+
+		try {
+			await expect(
+				downloadInRanges(URL, {
+					connections: 2,
+					maxBytes: 1024,
+					label: "stalled-video",
+					timeout: 20,
+					signal: parent.signal,
+				}),
+			).rejects.toThrow(/download (?:too slow|deadline exceeded)/);
+			expect(aborted).toBe(true);
+			expect(parent.signal.aborted).toBe(false);
+		} finally {
+			clearTimeout(guard);
+			parent.abort("test cleanup");
+			fetchSpy.mockRestore();
+		}
+	});
+
 	test("downloads ranges concurrently and assembles them in order", async () => {
 		const source = Uint8Array.from(
 			{ length: 600 * 1024 },

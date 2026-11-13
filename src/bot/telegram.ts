@@ -1,5 +1,4 @@
-import { config } from "config";
-import type { Caption, Media, RemoteMediaResource } from "extractors/types";
+import type { Media, RemoteMediaResource } from "extractors/types";
 import {
 	createSingleFlight,
 	deleteCachedMedia,
@@ -10,8 +9,14 @@ import {
 	setCachedMedia,
 	withHttpContext,
 } from "lib";
-import { AUDIO_EXT, SOURCE_LABELS } from "bot/constants";
+import { AUDIO_EXT } from "bot/constants";
 import type { MessageContext } from "bot/types";
+import {
+	renderCard,
+	richFileId,
+	sendDescriptionOverflow,
+	sendRichMessage,
+} from "bot/rich-message";
 
 const messageOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
@@ -129,62 +134,6 @@ const toAudioFile = (
 	return new File([data], `${filename}.${ext}`);
 };
 
-const { maxMediaCaption: MAX_MEDIA_CAPTION, maxMessageText: MAX_MESSAGE_TEXT } =
-	config.telegram;
-
-const escapeHtml = (value: string): string =>
-	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-type FormattedCaption = { primary?: string; overflow?: string };
-
-const buildCaption = (
-	caption: Caption | undefined,
-	limit: number,
-): FormattedCaption => {
-	if (!caption) return {};
-
-	const authorLine = caption.author
-		? `<b>@${escapeHtml(caption.author)}</b>`
-		: "";
-	const rawText = caption.text?.trim() ?? "";
-	const text = rawText ? escapeHtml(rawText) : "";
-	if (!authorLine && !rawText) return {};
-
-	const source = caption.source ? SOURCE_LABELS[caption.source] : undefined;
-	const sourceLine = source ? `<i>${source}</i>` : "";
-	const header = [sourceLine, authorLine].filter(Boolean).join("  •  ");
-	const combined = [header, text].filter(Boolean).join("\n\n");
-	const visibleHeader = [source, caption.author ? `@${caption.author}` : ""]
-		.filter(Boolean)
-		.join("  •  ");
-	const visible = [visibleHeader, rawText].filter(Boolean).join("\n\n");
-	if (visible.length <= limit) return { primary: combined };
-
-	return { primary: header || undefined, overflow: rawText || undefined };
-};
-
-const captionParams = (caption?: Caption) => {
-	const { primary } = buildCaption(caption, MAX_MEDIA_CAPTION);
-	return primary ? { caption: primary, parse_mode: "HTML" as const } : {};
-};
-
-const sendOverflow = async (
-	ctx: MessageContext,
-	overflow: string | undefined,
-): Promise<void> => {
-	if (!overflow) return;
-	let index = 0;
-	while (index < overflow.length) {
-		let end = Math.min(index + MAX_MESSAGE_TEXT, overflow.length);
-		const last = overflow.charCodeAt(end - 1);
-		if (end < overflow.length && last >= 0xd800 && last <= 0xdbff) end--;
-		await ctx.reply(escapeHtml(overflow.slice(index, end)), {
-			parse_mode: "HTML",
-		});
-		index = end;
-	}
-};
-
 type CoordinatedVideoSend = {
 	owner: symbol | null;
 	fileId?: string;
@@ -215,13 +164,20 @@ const sendVideo = async (
 	);
 
 	const params = {
+		type: "video" as const,
 		supports_streaming: true,
 		width: media.width,
 		height: media.height,
 		duration: media.duration,
-		...captionParams(media.caption),
 	};
-	const send = (input: Blob | string) => ctx.sendVideo(input, params);
+	const send = (input: Blob | string) => {
+		const attachments = [{ ...params, media: input }];
+		return sendRichMessage(
+			ctx,
+			renderCard(url, media.caption, attachments),
+			attachments,
+		);
+	};
 	const isFileId =
 		typeof media.data === "string" && !/^https?:\/\//i.test(media.data);
 	let route: DeliveryRoute;
@@ -249,7 +205,7 @@ const sendVideo = async (
 				}
 
 				const delivered = await deliverMedia(media.data, send);
-				const fileId = delivered.value.video?.fileId;
+				const fileId = richFileId(delivered.value, "video");
 				if (fileId) {
 					await setCachedMedia(url, {
 						fileId,
@@ -288,10 +244,7 @@ const sendVideo = async (
 	}
 
 	logger.info(`[send] video delivered via ${route} ${sizeLabel(bytes)}`);
-	await sendOverflow(
-		ctx,
-		buildCaption(media.caption, MAX_MEDIA_CAPTION).overflow,
-	);
+	await sendDescriptionOverflow(ctx, url, media.caption);
 };
 
 const sendPhoto = async (
@@ -304,8 +257,13 @@ const sendPhoto = async (
 	);
 	logger.info(`[send] photo ${media.width ?? "?"}x${media.height ?? "?"}`);
 
-	const message = await ctx.sendPhoto(media.data, captionParams(media.caption));
-	const fileId = message.photo?.at(-1)?.fileId;
+	const attachments = [{ type: "photo" as const, media: media.data }];
+	const message = await sendRichMessage(
+		ctx,
+		renderCard(url, media.caption, attachments),
+		attachments,
+	);
+	const fileId = richFileId(message, "photo");
 	if (fileId) {
 		await setCachedMedia(url, {
 			fileId,
@@ -316,10 +274,7 @@ const sendPhoto = async (
 		});
 	}
 
-	await sendOverflow(
-		ctx,
-		buildCaption(media.caption, MAX_MEDIA_CAPTION).overflow,
-	);
+	await sendDescriptionOverflow(ctx, url, media.caption);
 };
 
 const sendAudio = async (
@@ -341,6 +296,7 @@ const sendAudio = async (
 			duration: media.duration,
 			title: media.title,
 			performer: media.performer,
+			reply_markup: { inline_keyboard: [[{ text: "Original ↗", url }]] },
 		},
 	);
 
@@ -358,36 +314,19 @@ const sendAudio = async (
 
 const sendText = async (
 	ctx: MessageContext,
+	url: string,
 	media: Extract<Media, { type: "text" }>,
 ): Promise<void> => {
 	logger.info(`[send] text @${media.caption.author ?? "?"}`);
-	const { primary, overflow } = buildCaption(media.caption, MAX_MESSAGE_TEXT);
-	if (primary) await ctx.reply(primary, { parse_mode: "HTML" });
-	await sendOverflow(ctx, overflow);
+	await sendRichMessage(ctx, renderCard(url, media.caption));
+	await sendDescriptionOverflow(ctx, url, media.caption);
 };
 
-const MEDIA_GROUP_LIMIT = 10;
-
-const sendCarouselItem = async (
-	ctx: MessageContext,
-	item: Extract<Media, { type: "carousel" }>["items"][number],
-	caption: ReturnType<typeof captionParams>,
-): Promise<void> => {
-	if (item.type === "video") {
-		await ctx.sendVideo(item.data, {
-			supports_streaming: true,
-			width: item.width,
-			height: item.height,
-			duration: item.duration,
-			...caption,
-		});
-		return;
-	}
-	await ctx.sendPhoto(item.data, caption);
-};
+const RICH_MEDIA_LIMIT = 50;
 
 const sendCarousel = async (
 	ctx: MessageContext,
+	url: string,
 	media: Extract<Media, { type: "carousel" }>,
 ): Promise<void> => {
 	void bestEffortTelegram("carousel chat action", () =>
@@ -396,24 +335,29 @@ const sendCarousel = async (
 	logger.info(`[send] carousel ${media.items.length} items`);
 	if (media.items.length === 0) throw new Error("empty carousel");
 
-	const headerParams = captionParams(media.caption);
 	for (
 		let offset = 0;
 		offset < media.items.length;
-		offset += MEDIA_GROUP_LIMIT
+		offset += RICH_MEDIA_LIMIT
 	) {
-		const items = media.items.slice(offset, offset + MEDIA_GROUP_LIMIT);
-		if (items.length === 1 && items[0]) {
-			await sendCarouselItem(ctx, items[0], offset === 0 ? headerParams : {});
-			continue;
-		}
-
-		await ctx.sendMediaGroup(
-			items.map((item, index) => ({
+		const attachments = media.items
+			.slice(offset, offset + RICH_MEDIA_LIMIT)
+			.map((item) => ({
 				type: item.type,
 				media: item.data,
-				...(offset === 0 && index === 0 ? headerParams : {}),
-			})),
+				...(item.type === "video"
+					? {
+							width: item.width,
+							height: item.height,
+							duration: item.duration,
+							supports_streaming: true,
+						}
+					: {}),
+			}));
+		await sendRichMessage(
+			ctx,
+			renderCard(url, offset === 0 ? media.caption : undefined, attachments),
+			attachments,
 		);
 	}
 
@@ -426,10 +370,7 @@ const sendCarousel = async (
 		});
 	}
 
-	await sendOverflow(
-		ctx,
-		buildCaption(media.caption, MAX_MEDIA_CAPTION).overflow,
-	);
+	await sendDescriptionOverflow(ctx, url, media.caption);
 };
 
 export const sendTelegramMedia = async (
@@ -445,9 +386,9 @@ export const sendTelegramMedia = async (
 		case "audio":
 			return sendAudio(ctx, url, media);
 		case "carousel":
-			return sendCarousel(ctx, media);
+			return sendCarousel(ctx, url, media);
 		case "text":
-			return sendText(ctx, media);
+			return sendText(ctx, url, media);
 		default:
 			media satisfies never;
 	}

@@ -1,4 +1,5 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, spyOn } from "bun:test";
+import { config } from "config";
 import {
 	HttpNetworkError,
 	HttpStatusError,
@@ -126,6 +127,103 @@ describe("http", () => {
 			}),
 		).rejects.toThrow("FILE_TOO_LARGE");
 		expect(largeRequests).toBe(1);
+	});
+
+	test("enforces maxBytes for text, JSON, and array buffers without retrying", async () => {
+		const options = { maxBytes: 8, attempts: 3 };
+		const readers = [
+			() =>
+				http("https://example.com/large", { ...options, responseType: "text" }),
+			() =>
+				http("https://example.com/large", { ...options, responseType: "json" }),
+			() =>
+				http("https://example.com/large", {
+					...options,
+					responseType: "arrayBuffer",
+				}),
+		];
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () =>
+			Response.json({ data: "x".repeat(100) })) as unknown as typeof fetch);
+
+		try {
+			for (const read of readers) {
+				fetchSpy.mockClear();
+				await expect(read()).rejects.toThrow("FILE_TOO_LARGE");
+				expect(fetchSpy).toHaveBeenCalledTimes(1);
+			}
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	test("applies the default document limit to text and JSON", async () => {
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () =>
+			Response.json({
+				data: "x".repeat(config.http.maxDocumentSize),
+			})) as unknown as typeof fetch);
+
+		try {
+			await expect(
+				http("https://example.com/document", { responseType: "text" }),
+			).rejects.toThrow("FILE_TOO_LARGE");
+			await expect(
+				http("https://example.com/document", { responseType: "json" }),
+			).rejects.toThrow("FILE_TOO_LARGE");
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	test("cancels an oversized chunked document and releases its reader", async () => {
+		let cancelled = false;
+		const response = new Response(
+			new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode("12345"));
+					controller.enqueue(new TextEncoder().encode("67890"));
+					controller.enqueue(new TextEncoder().encode("unread"));
+					controller.close();
+				},
+				cancel() {
+					cancelled = true;
+				},
+			}),
+		);
+		const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(response);
+
+		try {
+			await expect(
+				http("https://example.com/chunked", {
+					responseType: "text",
+					maxBytes: 8,
+					attempts: 1,
+				}),
+			).rejects.toThrow("FILE_TOO_LARGE");
+			expect(cancelled).toBe(true);
+			expect(response.body?.locked).toBe(false);
+		} finally {
+			await response.body?.cancel().catch(() => {});
+			fetchSpy.mockRestore();
+		}
+	});
+
+	test("accepts a document exactly at the byte limit", async () => {
+		const text = '"😀"';
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+			(async () => new Response(text)) as unknown as typeof fetch,
+		);
+
+		try {
+			expect(
+				await http<string>("https://example.com/exact", { maxBytes: 6 }),
+			).toBe("😀");
+			await expect(
+				http("https://example.com/exact", { maxBytes: 5 }),
+			).rejects.toThrow("FILE_TOO_LARGE");
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 
 	test("fetches raw response", async () => {

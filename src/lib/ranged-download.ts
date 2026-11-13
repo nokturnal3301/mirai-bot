@@ -12,6 +12,7 @@ export type RangedDownloadOptions = Readonly<{
 	minBytesPerSecond?: number;
 	label: string;
 	signal?: AbortSignal;
+	/** Total download deadline, including the probe and response bodies. */
 	timeout?: number;
 	proxy?: boolean;
 	onBytes?: (bytes: number) => void;
@@ -115,8 +116,20 @@ export const downloadInRanges = async (
 
 	let deadlineExpired = false;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	const setDeadline = (durationMs: number): void => {
+		if (timer) clearTimeout(timer);
+		timer = setTimeout(
+			() => {
+				deadlineExpired = true;
+				controller.abort(`${options.label} download deadline exceeded`);
+			},
+			Math.max(0, durationMs - (performance.now() - startedAt)),
+		);
+	};
 
 	try {
+		// A server may ignore Range and stream the whole file during the probe.
+		setDeadline(options.timeout ?? MAX_DEADLINE_MS);
 		const expectedBytes =
 			options.expectedBytes !== undefined &&
 			Number.isFinite(options.expectedBytes) &&
@@ -137,12 +150,9 @@ export const downloadInRanges = async (
 			return { bytes: probe.full, contentType: probe.contentType };
 		}
 
-		timer = setTimeout(
-			() => {
-				deadlineExpired = true;
-				controller.abort(`${options.label} download deadline exceeded`);
-			},
-			deadlineFor(probe.total, options.minBytesPerSecond ?? MIN_SPEED_BPS),
+		setDeadline(
+			options.timeout ??
+				deadlineFor(probe.total, options.minBytesPerSecond ?? MIN_SPEED_BPS),
 		);
 
 		if (connections === 1 || probe.total < MIN_PARALLEL_SIZE) {
@@ -235,7 +245,7 @@ export const downloadInRanges = async (
 	} catch (error) {
 		if (!controller.signal.aborted) controller.abort(error);
 		if (deadlineExpired && !options.signal?.aborted) {
-			throw new Error(`${options.label} download too slow (dead proxy ip)`);
+			throw new Error(`${options.label} download deadline exceeded`);
 		}
 		throw error;
 	} finally {

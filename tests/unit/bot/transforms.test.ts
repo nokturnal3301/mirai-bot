@@ -1,4 +1,5 @@
-import { describe, test, expect } from "bun:test";
+import { afterEach, beforeEach, describe, test, expect, spyOn } from "bun:test";
+import * as rich from "bot/rich-message";
 import {
 	checkFileSize,
 	detectUrl,
@@ -286,9 +287,36 @@ describe("checkFileSize", () => {
 });
 
 describe("sendMedia", () => {
+	type Call = { method: string; args: unknown[] };
+	let richSpy: ReturnType<typeof spyOn<typeof rich, "sendRichMessage">>;
+	beforeEach(() => {
+		richSpy = spyOn(rich, "sendRichMessage").mockImplementation(
+			async (ctx, html, media = []) => {
+				(ctx as unknown as { calls: Call[] }).calls.push({
+					method: "sendRichMessage",
+					args: [html, media],
+				});
+				return {
+					rich_message: {
+						blocks: media.map((item) =>
+							item.type === "video"
+								? { type: "video", video: { file_id: "vid-1" } }
+								: {
+										type: "photo",
+										photo: [{ file_id: "ph-1" }, { file_id: "ph-2" }],
+									},
+						),
+					},
+				};
+			},
+		);
+	});
+	afterEach(() => richSpy.mockRestore());
+
 	const makeCtx = () => {
-		const calls: { method: string; args: unknown[] }[] = [];
+		const calls: Call[] = [];
 		const ctx = {
+			calls,
 			sendChatAction: async (...args: unknown[]) => {
 				calls.push({ method: "sendChatAction", args });
 			},
@@ -314,7 +342,7 @@ describe("sendMedia", () => {
 		return { ctx, calls };
 	};
 
-	test("dispatches to sendVideo for video media", async () => {
+	test("sends video metadata in a rich card", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const media = {
@@ -328,11 +356,21 @@ describe("sendMedia", () => {
 		const result = await sendMedia({ ctx, url: "https://example.com", media });
 
 		expect(result._tag).toBe("Continue");
-		expect(calls.some((c) => c.method === "sendVideo")).toBe(true);
-		expect(calls.some((c) => c.method === "sendPhoto")).toBe(false);
+		const call = calls.find((c) => c.method === "sendRichMessage");
+		expect(call?.args[0]).toContain('<video src="tg://video?id=media-0">');
+		expect(call?.args[1]).toEqual([
+			{
+				type: "video",
+				media: media.data,
+				width: 1080,
+				height: 1920,
+				duration: 30,
+				supports_streaming: true,
+			},
+		]);
 	});
 
-	test("dispatches to sendPhoto for photo media", async () => {
+	test("sends photos in a rich card", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const media = {
@@ -343,11 +381,12 @@ describe("sendMedia", () => {
 		const result = await sendMedia({ ctx, url: "https://example.com", media });
 
 		expect(result._tag).toBe("Continue");
-		expect(calls.some((c) => c.method === "sendPhoto")).toBe(true);
-		expect(calls.some((c) => c.method === "sendVideo")).toBe(false);
+		const call = calls.find((c) => c.method === "sendRichMessage");
+		expect(call?.args[0]).toContain('<img src="tg://photo?id=media-0"/>');
+		expect(call?.args[1]).toEqual([{ type: "photo", media: media.data }]);
 	});
 
-	test("dispatches to sendMediaGroup for carousel with correct item shape", async () => {
+	test("sends mixed carousels as a rich slideshow", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const blob = new Blob(["x"]);
@@ -362,12 +401,13 @@ describe("sendMedia", () => {
 		const result = await sendMedia({ ctx, url: "https://example.com", media });
 
 		expect(result._tag).toBe("Continue");
-		const groupCall = calls.find((c) => c.method === "sendMediaGroup");
+		const groupCall = calls.find((c) => c.method === "sendRichMessage");
 		expect(groupCall).toBeDefined();
-		const items = groupCall?.args[0] as { type: string; media: unknown }[];
+		expect(groupCall?.args[0]).toContain("<tg-slideshow>");
+		const items = groupCall?.args[1] as rich.RichMedia[];
 		expect(items).toEqual([
 			{ type: "photo", media: "https://cdn/1.jpg" },
-			{ type: "video", media: blob },
+			{ type: "video", media: blob, supports_streaming: true },
 		]);
 		expect(calls.some((c) => c.method === "sendAudio")).toBe(false);
 	});
@@ -389,7 +429,7 @@ describe("sendMedia", () => {
 		await sendMedia({ ctx, url: "https://example.com", media });
 
 		const audioIdx = calls.findIndex((c) => c.method === "sendAudio");
-		const photoIdx = calls.findIndex((c) => c.method === "sendPhoto");
+		const photoIdx = calls.findIndex((c) => c.method === "sendRichMessage");
 		expect(photoIdx).toBeGreaterThan(-1);
 		expect(audioIdx).toBeGreaterThan(photoIdx);
 		expect(calls.some((c) => c.method === "sendMediaGroup")).toBe(false);
@@ -405,7 +445,7 @@ describe("sendMedia", () => {
 		expect(params.duration).toBe(30);
 	});
 
-	test("chunks carousels at Telegram's ten-item media-group limit", async () => {
+	test("keeps an eleven-item carousel in a single rich card", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const media = {
@@ -418,10 +458,9 @@ describe("sendMedia", () => {
 
 		await sendMedia({ ctx, url: "https://example.com", media });
 
-		const groups = calls.filter((c) => c.method === "sendMediaGroup");
+		const groups = calls.filter((c) => c.method === "sendRichMessage");
 		expect(groups).toHaveLength(1);
-		expect(groups[0]?.args[0]).toHaveLength(10);
-		expect(calls.filter((c) => c.method === "sendPhoto")).toHaveLength(1);
+		expect(groups[0]?.args[1]).toHaveLength(11);
 	});
 
 	test("wraps audio Blob into named File for sendAudio", async () => {
@@ -531,7 +570,7 @@ describe("sendMedia", () => {
 		expect(file.name).toBe("Track.m4a");
 	});
 
-	test("counts HTML entities by visible caption length", async () => {
+	test("keeps an escaped description inside the collapsed block", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const media = {
@@ -542,10 +581,11 @@ describe("sendMedia", () => {
 
 		await sendMedia({ ctx, url: "https://example.com/entity-caption", media });
 
-		const videoCall = calls.find((call) => call.method === "sendVideo");
-		const params = videoCall?.args[1] as { caption?: string };
-		expect(params.caption).toBe("&amp;".repeat(1_000));
-		expect(calls.some((call) => call.method === "reply")).toBe(false);
+		const cards = calls.filter((call) => call.method === "sendRichMessage");
+		expect(cards).toHaveLength(1);
+		expect(cards[0]?.args[0]).toContain(
+			`<details><summary>Description</summary><p>${"&amp;".repeat(1_000)}</p></details>`,
+		);
 	});
 
 	test("escapes each overflow chunk without splitting a surrogate pair", async () => {
@@ -553,15 +593,19 @@ describe("sendMedia", () => {
 		const { ctx, calls } = makeCtx();
 		const media = {
 			type: "text" as const,
-			caption: { text: `${"a".repeat(4_095)}😀&tail` },
+			caption: { text: `${"a".repeat(29_999)}😀&tail` },
 		};
 
 		await sendMedia({ ctx, url: "https://example.com/overflow", media });
 
-		const replies = calls.filter((call) => call.method === "reply");
+		const replies = calls.filter((call) => call.method === "sendRichMessage");
 		expect(replies).toHaveLength(2);
-		expect(replies[0]?.args[0]).toBe("a".repeat(4_095));
-		expect(replies[1]?.args[0]).toBe("😀&amp;tail");
+		expect(replies[0]?.args[0]).toContain(
+			`${"a".repeat(29_999)}😀</p></details>`,
+		);
+		expect(replies[1]?.args[0]).toContain(
+			"<details><summary>Description</summary><p>&amp;tail</p></details>",
+		);
 	});
 
 	test("coalesces concurrent cold video sends and replays the file_id", async () => {
@@ -575,12 +619,17 @@ describe("sendMedia", () => {
 			({
 				id,
 				sendChatAction: async () => undefined,
-				sendVideo: async (input: Blob | string) => {
-					inputs.push(input);
-					if (input instanceof Blob) await uploadGate;
-					return { video: { fileId: "shared-video-id" } };
-				},
 			}) as unknown as MessageContext;
+		richSpy.mockImplementation(async (_ctx, _html, media) => {
+			const input = media?.[0]?.media;
+			if (input) inputs.push(input);
+			if (input instanceof Blob) await uploadGate;
+			return {
+				rich_message: {
+					blocks: [{ type: "video", video: { file_id: "shared-video-id" } }],
+				},
+			};
+		});
 		const media = {
 			type: "video" as const,
 			data: new Blob(["cold-video"]),
@@ -614,20 +663,24 @@ describe("sendMedia", () => {
 		const leader = {
 			id: 101,
 			sendChatAction: async () => undefined,
-			sendVideo: async () => {
-				leaderStarted = true;
-				await leaderGate;
-				throw new Error("Forbidden: bot was blocked by the user");
-			},
 		} as unknown as MessageContext;
 		const follower = {
 			id: 102,
 			sendChatAction: async () => undefined,
-			sendVideo: async () => {
-				followerUploads++;
-				return { video: { fileId: "follower-file-id" } };
-			},
 		} as unknown as MessageContext;
+		richSpy.mockImplementation(async (ctx) => {
+			if (ctx.id === 101) {
+				leaderStarted = true;
+				await leaderGate;
+				throw new Error("Forbidden: bot was blocked by the user");
+			}
+			followerUploads++;
+			return {
+				rich_message: {
+					blocks: [{ type: "video", video: { file_id: "follower-file-id" } }],
+				},
+			};
+		});
 		const media = { type: "video" as const, data: new Blob(["shared"]) };
 		const url = "https://example.com/chat-isolation-video";
 

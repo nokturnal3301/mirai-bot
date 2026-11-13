@@ -14,12 +14,23 @@ export const MESSAGES = {
 import type { Platform } from "extractors/types";
 
 export const SOURCE_LABELS: Record<Platform, string> = {
-	instagram: "📷 Instagram",
-	tiktok: "🎵 TikTok",
-	youtube: "▶️ YouTube",
-	threads: "🧵 Threads",
-	twitter: "🐦 Twitter",
-	reddit: "🟠 Reddit",
+	instagram: "Instagram",
+	tiktok: "TikTok",
+	youtube: "YouTube",
+	threads: "Threads",
+	twitter: "X",
+	reddit: "Reddit",
+};
+
+// Matching platform logos from https://t.me/addemoji/app_set.
+// IDs and artwork verified with getStickerSet; keep IDs as strings.
+export const SOURCE_ICONS: Record<Platform, string> = {
+	instagram: "5280708542934833772",
+	tiktok: "5249421449940196012",
+	youtube: "5248965805449700363",
+	threads: "5246853643612740845",
+	twitter: "5244967186602157741",
+	reddit: "5307693040771559084",
 };
 
 export const AUDIO_EXT: Record<string, string> = {

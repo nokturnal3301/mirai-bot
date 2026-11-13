@@ -29,6 +29,7 @@ export type HttpTextResponse = {
 export type HttpOptions<R extends ResponseType> = RequestInit & {
 	attempts?: number;
 	timeout?: number;
+	/** Raw responses transfer body limits and deadline ownership to the caller. */
 	responseType?: R;
 	proxy?: boolean;
 	allowPrivate?: boolean;
@@ -123,17 +124,23 @@ const readLimitedBlob = async (
 	const chunks: ArrayBuffer[] = [];
 	let size = 0;
 
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		size += value.byteLength;
-		if (size > limit) {
-			await reader.cancel();
-			throw responseTooLargeFailure(limit, size);
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			size += value.byteLength;
+			if (size > limit) {
+				throw responseTooLargeFailure(limit, size);
+			}
+			const copy = new Uint8Array(value.byteLength);
+			copy.set(value);
+			chunks.push(copy.buffer);
 		}
-		const copy = new Uint8Array(value.byteLength);
-		copy.set(value);
-		chunks.push(copy.buffer);
+	} catch (error) {
+		await reader.cancel(error).catch(() => {});
+		throw error;
+	} finally {
+		reader.releaseLock();
 	}
 
 	return new Blob(chunks, {
@@ -301,18 +308,17 @@ export async function http<R extends ResponseType = "json">(
 			}
 
 			if (!result.ok) {
+				await result.body?.cancel();
 				throw new HttpStatusError(result.status, result.url || url);
 			}
 
-			if (responseType === "blob" && maxBytes !== undefined) {
-				return (await readLimitedBlob(result, maxBytes)) as ResponseMap[R];
-			}
-
+			const limit =
+				maxBytes ??
+				(responseType === "blob" || responseType === "arrayBuffer"
+					? config.telegram.maxFileSize
+					: config.http.maxDocumentSize);
+			const blob = await readLimitedBlob(result, limit);
 			if (responseType === "textWithHeaders") {
-				const blob = await readLimitedBlob(
-					result,
-					maxBytes ?? config.http.maxDocumentSize,
-				);
 				return {
 					body: await blob.text(),
 					headers: result.headers,
@@ -321,8 +327,14 @@ export async function http<R extends ResponseType = "json">(
 				} as ResponseMap[R];
 			}
 
-			const method = responseType as "json" | "text" | "blob" | "arrayBuffer";
-			return (await result[method]()) as ResponseMap[R];
+			if (responseType === "blob") return blob as ResponseMap[R];
+			if (responseType === "arrayBuffer") {
+				return (await blob.arrayBuffer()) as ResponseMap[R];
+			}
+			const text = await blob.text();
+			return (
+				responseType === "json" ? JSON.parse(text) : text
+			) as ResponseMap[R];
 		} catch (error) {
 			lastError =
 				controller.signal.aborted && !externalSignal?.aborted

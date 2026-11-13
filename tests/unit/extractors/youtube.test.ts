@@ -204,8 +204,9 @@ describe("youtube", () => {
 			}
 		});
 
-		test("rerolls the sticky route after a media download failure", async () => {
+		test("rerolls the sticky route after both combined and adaptive downloads fail", async () => {
 			const mediaUrl = "https://media.example/unavailable.mp4";
+			const audioUrl = "https://media.example/unavailable.m4a";
 			let playerRequests = 0;
 			let mediaRequests = 0;
 			const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
@@ -215,7 +216,7 @@ describe("youtube", () => {
 				if (url === "https://www.youtube.com/") {
 					return new Response('"visitorData":"visitor-id"');
 				}
-				if (url === mediaUrl) {
+				if (url === mediaUrl || url === audioUrl) {
 					mediaRequests++;
 					return new Response(null, { status: 503 });
 				}
@@ -231,6 +232,10 @@ describe("youtube", () => {
 								contentLength: "1024",
 							},
 						],
+						adaptiveFormats: [
+							{ url: mediaUrl, mimeType: 'video/mp4; codecs="avc1.4d401e"' },
+							{ url: audioUrl, mimeType: 'audio/mp4; codecs="mp4a.40.2"' },
+						],
 					},
 				});
 			}) as typeof fetch);
@@ -242,7 +247,7 @@ describe("youtube", () => {
 
 				expect(result._tag).toBe("Fail");
 				expect(playerRequests).toBe(3);
-				expect(mediaRequests).toBe(3);
+				expect(mediaRequests).toBe(9);
 			} finally {
 				fetchSpy.mockRestore();
 			}
