@@ -14,6 +14,10 @@ import {
 } from "extractors/tiktok/utils";
 
 const REGION_COOKIE = "tt-target-idc=useast2a";
+// A solved challenge stays valid for a while; reusing it skips a page load
+// and up to a million hashes on our single CPU.
+const CHALLENGE_TTL_MS = 5 * 60_000;
+let solved: { cookie: string; expiresAt: number } | null = null;
 type PageResult = { html: string; cookies: string };
 type ItemPayload = { item: SSRItem; cookies: string };
 
@@ -39,11 +43,19 @@ const fetchItem = async (
 	signal: AbortSignal,
 ): Promise<Flow<ItemPayload, ExtractionError>> => {
 	const pageUrl = `https://www.tiktok.com/@i/video/${postId}`;
-	let page = await fetchPage(pageUrl, signal, { Cookie: REGION_COOKIE });
+	const reused =
+		solved && solved.expiresAt > Date.now() ? `; ${solved.cookie}` : "";
+	let page = await fetchPage(pageUrl, signal, {
+		Cookie: `${REGION_COOKIE}${reused}`,
+	});
 
 	if (!hasTikTokSsrData(page.html)) {
 		const challengeCookie = await solveChallenge(page.html, signal);
 		if (challengeCookie) {
+			solved = {
+				cookie: challengeCookie,
+				expiresAt: Date.now() + CHALLENGE_TTL_MS,
+			};
 			page = await fetchPage(pageUrl, signal, {
 				Cookie: `${REGION_COOKIE}; ${challengeCookie}`,
 			});
