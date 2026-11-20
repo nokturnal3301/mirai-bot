@@ -353,6 +353,7 @@ const sendCarousel = async (
 						}
 					: {}),
 			}));
+		const startedAt = performance.now();
 		await sendRichMessage(
 			ctx,
 			renderCard(
@@ -363,15 +364,22 @@ const sendCarousel = async (
 			),
 			attachments,
 		);
+		logger.info(
+			`[send] carousel card ${attachments.length} items in ${elapsedMs(startedAt)}`,
+		);
 	}
 
 	if (media.audio) {
 		const { data, duration, title, performer } = media.audio;
+		const startedAt = performance.now();
 		await ctx.sendAudio(toAudioFile(data, title, performer), {
 			duration,
 			title,
 			performer,
 		});
+		logger.info(
+			`[send] carousel audio via ${typeof data === "string" ? "url" : "multipart"} in ${elapsedMs(startedAt)}`,
+		);
 	}
 
 	await sendDescriptionOverflow(ctx, media.caption);

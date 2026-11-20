@@ -131,27 +131,19 @@ export const buildTikTokMediaPlan = (
 	const imageUrls = imageUrlsOf(item);
 
 	if (imageUrls.length > 0) {
+		// Downloaded with the photos: Telegram fetching TikTok's CDN itself can
+		// take 20s+ from the server.
 		const audio = item.music?.playUrl
-			? route === "page"
-				? {
-						source: {
-							kind: "remote" as const,
-							url: item.music.playUrl,
-						},
-						duration: item.music.duration,
-						title: item.music.title,
-						performer: item.music.authorName,
-					}
-				: {
-						source: {
-							kind: "download" as const,
-							url: item.music.playUrl,
-							headers: publicHeaders,
-						},
-						duration: item.music.duration,
-						title: item.music.title,
-						performer: item.music.authorName,
-					}
+			? {
+					source: {
+						kind: "download" as const,
+						url: item.music.playUrl,
+						headers: publicHeaders,
+					},
+					duration: item.music.duration,
+					title: item.music.title,
+					performer: item.music.authorName,
+				}
 			: undefined;
 
 		return F.of({

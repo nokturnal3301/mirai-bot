@@ -257,43 +257,48 @@ const materializeItem = async (
 	}
 };
 
+const materializeAudio = async (
+	plan: AudioPlan | undefined,
+	signal?: AbortSignal,
+): Promise<Extract<Media, { type: "carousel" }>["audio"]> => {
+	if (!plan) return undefined;
+	try {
+		return {
+			data: await materializeFileSource(plan.source, signal),
+			...(plan.duration !== undefined ? { duration: plan.duration } : {}),
+			...(plan.title ? { title: plan.title } : {}),
+			...(plan.performer ? { performer: plan.performer } : {}),
+		};
+	} catch {
+		// A carousel remains useful when its optional soundtrack is unavailable.
+		return undefined;
+	}
+};
+
 const materializeCarousel = async (
 	plan: Extract<MediaPlan, { type: "carousel" }>,
 	signal?: AbortSignal,
 ): Promise<Flow<Media, ExtractionError>> => {
 	const maxBytes = plan.maxBytes ?? config.telegram.maxCarouselBytes;
 	let totalBytes = 0;
-	const materialized = await mapConcurrent(
-		plan.items.slice(0, config.telegram.maxCarouselItems),
-		plan.concurrency ?? 2,
-		async (item) => {
-			const result = await materializeItem(item, signal);
-			if (!result) return null;
-			const bytes = result.data instanceof Blob ? result.data.size : 0;
-			if (totalBytes + bytes > maxBytes) return null;
-			totalBytes += bytes;
-			return result;
-		},
-	);
+	const [materialized, audio] = await Promise.all([
+		mapConcurrent(
+			plan.items.slice(0, config.telegram.maxCarouselItems),
+			plan.concurrency ?? 2,
+			async (item) => {
+				const result = await materializeItem(item, signal);
+				if (!result) return null;
+				const bytes = result.data instanceof Blob ? result.data.size : 0;
+				if (totalBytes + bytes > maxBytes) return null;
+				totalBytes += bytes;
+				return result;
+			},
+		),
+		materializeAudio(plan.audio, signal),
+	]);
 	const items = materialized.filter((item): item is MediaItem => item !== null);
 	if (items.length === 0)
 		return F.fail(extractionError("NO_MEDIA", "no carousel items"));
-
-	let audio: Extract<Media, { type: "carousel" }>["audio"];
-	if (plan.audio) {
-		try {
-			audio = {
-				data: await materializeFileSource(plan.audio.source, signal),
-				...(plan.audio.duration !== undefined
-					? { duration: plan.audio.duration }
-					: {}),
-				...(plan.audio.title ? { title: plan.audio.title } : {}),
-				...(plan.audio.performer ? { performer: plan.audio.performer } : {}),
-			};
-		} catch {
-			// A carousel remains useful when its optional soundtrack is unavailable.
-		}
-	}
 
 	return F.of({
 		type: "carousel",
