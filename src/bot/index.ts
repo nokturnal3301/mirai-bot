@@ -10,6 +10,7 @@ import {
 } from "lib";
 import { startHandler, errorHandler, messageHandler } from "bot/handlers";
 import { startCommand, helpCommand } from "bot/commands";
+import { warmExtractors } from "extractors/registry";
 
 const bot = new Bot(env.TELEGRAM_BOT_TOKEN, {
 	api: {
@@ -38,6 +39,7 @@ setupGracefulShutdown(async () => {
 });
 
 warmFfmpeg();
+void warmExtractors();
 
 await bot.api.setMyCommands({
 	commands: [

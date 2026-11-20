@@ -101,4 +101,6 @@ export type Extractor = {
 	platform: Platform;
 	match: (url: string) => boolean;
 	extract: (url: string) => Promise<Flow<Media, ExtractionError>>;
+	// Per-process setup done at boot so the first request doesn't pay for it.
+	warm?: () => Promise<void>;
 };

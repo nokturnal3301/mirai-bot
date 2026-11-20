@@ -24,6 +24,7 @@ import {
 	logger,
 	strategyFact,
 	withCpuAdmission,
+	withStickyProxy,
 	type ExtractionError,
 } from "lib";
 import { isPublicHttpUrl } from "lib/url";
@@ -239,18 +240,12 @@ const currentRouteKey = (): string => {
 		: "direct";
 };
 
-const fetchSession = async (): Promise<Session> => {
-	if (cachedSession && Date.now() - cachedSession.fetchedAt < SESSION_TTL_MS) {
-		return cachedSession;
-	}
+const isFresh = (session: Session | null): session is Session =>
+	!!session && Date.now() - session.fetchedAt < SESSION_TTL_MS;
 
-	return loadSession(currentRouteKey(), async () => {
-		if (
-			cachedSession &&
-			Date.now() - cachedSession.fetchedAt < SESSION_TTL_MS
-		) {
-			return cachedSession;
-		}
+const refreshSession = (): Promise<Session> =>
+	loadSession(currentRouteKey(), async () => {
+		if (isFresh(cachedSession)) return cachedSession;
 
 		const html = await http(YOUTUBE_HOME_URL, {
 			headers: {
@@ -270,6 +265,26 @@ const fetchSession = async (): Promise<Session> => {
 		);
 		return cachedSession;
 	});
+
+// An expired visitorData still works, so requests use it while a fresh one
+// loads in the background instead of waiting for the YouTube homepage.
+const fetchSession = async (): Promise<Session> => {
+	if (!cachedSession) return refreshSession();
+	if (!isFresh(cachedSession)) {
+		refreshSession().catch((error) =>
+			logger.warn(`[youtube/session] refresh failed: ${errorMessage(error)}`),
+		);
+	}
+	return cachedSession;
+};
+
+// Same route as extraction, which always runs through a sticky proxy.
+export const warmYouTubeSession = async (): Promise<void> => {
+	try {
+		await withStickyProxy(refreshSession);
+	} catch (error) {
+		logger.warn(`[youtube/session] warm-up failed: ${errorMessage(error)}`);
+	}
 };
 
 type ChallengeData = {

@@ -17,3 +17,7 @@ const extractors: Extractor[] = [
 
 export const findExtractor = (url: string): Extractor | undefined =>
 	extractors.find((extractor) => extractor.match(url));
+
+export const warmExtractors = async (): Promise<void> => {
+	await Promise.all(extractors.map((extractor) => extractor.warm?.()));
+};

@@ -12,7 +12,10 @@ import {
 } from "lib";
 import { adaptive } from "extractors/youtube/strategies/adaptive";
 import { combined } from "extractors/youtube/strategies/combined";
-import { prefetchEngagement } from "extractors/youtube/utils";
+import {
+	prefetchEngagement,
+	warmYouTubeSession,
+} from "extractors/youtube/utils";
 import { SESSION_ROLLS } from "./constants";
 
 const withDownload = (
@@ -29,6 +32,7 @@ const withDownload = (
 export const youtube: Extractor = {
 	platform: "youtube",
 	match: (url) => matchesHttpUrl(url, ["youtube.com"], /^\/shorts\/[\w-]+/),
+	warm: warmYouTubeSession,
 	extract: async (url) => {
 		const withEngagement = prefetchEngagement(url);
 		const result = await retry("youtube", SESSION_ROLLS, () =>
