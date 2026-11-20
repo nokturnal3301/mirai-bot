@@ -5,6 +5,7 @@ import {
 	detectUrl,
 	extract,
 	matchExtractor,
+	replyError,
 } from "bot/transforms";
 import type { MessageContext } from "bot/types";
 import { env } from "config";
@@ -148,6 +149,80 @@ describe("extract", () => {
 			expect(proxySessions[0]).not.toBe(proxySessions[1]);
 		} finally {
 			env.PROXY_URL = previousProxyUrl;
+		}
+	});
+
+	test("reports age-gated posts without proxy retries", async () => {
+		const previousProxyUrl = env.PROXY_URL;
+		env.PROXY_URL = "http://customer:secret@proxy.example:12321";
+		let calls = 0;
+		const extractor: Extractor = {
+			platform: "tiktok",
+			match: () => true,
+			extract: async () => {
+				calls++;
+				return F.fail(
+					extractionError(
+						"AGE_RESTRICTED",
+						"TikTok requires login for classified content",
+					),
+				);
+			},
+		};
+
+		try {
+			const result = await extract({
+				ctx: mockCtx(""),
+				url: `https://example.com/${crypto.randomUUID()}`,
+				extractor,
+			});
+
+			expect(result).toEqual({ _tag: "Fail", error: "AGE_RESTRICTED" });
+			expect(calls).toBe(1);
+		} finally {
+			env.PROXY_URL = previousProxyUrl;
+		}
+	});
+});
+
+describe("replyError", () => {
+	const replyTo = (text: string) =>
+		({ ...mockCtx(text), id: 77 }) as unknown as MessageContext;
+
+	test("replies with the error card and links back to the post", async () => {
+		const richSpy = spyOn(rich, "sendRichMessage").mockResolvedValue(
+			{} as never,
+		);
+		try {
+			const result = await replyError(
+				replyTo("look https://www.instagram.com/reel/ABC/?igsh=1"),
+			)("AGE_RESTRICTED");
+
+			expect(result._tag).toBe("Stop");
+			const [, html, media, params] = richSpy.mock.calls[0] ?? [];
+			expect(html).toContain("<b>Age-restricted post</b>");
+			expect(html).toContain(
+				'<a href="https://www.instagram.com/reel/ABC/?igsh=1">Open in Instagram</a>',
+			);
+			expect(media).toEqual([]);
+			expect(params).toEqual({ reply_parameters: { message_id: 77 } });
+		} finally {
+			richSpy.mockRestore();
+		}
+	});
+
+	test("falls back to the generic card for unknown codes", async () => {
+		const richSpy = spyOn(rich, "sendRichMessage").mockResolvedValue(
+			{} as never,
+		);
+		try {
+			await replyError(replyTo("https://www.instagram.com/p/ABC/"))("toString");
+
+			const html = String(richSpy.mock.calls[0]?.[1]);
+			expect(html).toContain("<b>Something went wrong</b>");
+			expect(html).not.toContain("<footer>");
+		} finally {
+			richSpy.mockRestore();
 		}
 	});
 });

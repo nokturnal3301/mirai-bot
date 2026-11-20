@@ -175,9 +175,8 @@ export const buildTikTokMediaPlan = (
 	if (!source && item.isContentClassified) {
 		return F.fail(
 			extractionError(
-				"UPSTREAM_REJECTED",
+				"AGE_RESTRICTED",
 				"TikTok requires login for classified content",
-				{ retryable: false, terminal: true },
 			),
 		);
 	}

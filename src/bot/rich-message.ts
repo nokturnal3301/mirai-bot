@@ -1,6 +1,9 @@
 import {
 	CARD_ICONS,
+	type ErrorCode,
+	ERRORS,
 	HASHTAG_URLS,
+	PLATFORM_NAMES,
 	PROFILE_URLS,
 	SOURCE_ICONS,
 } from "bot/constants";
@@ -229,6 +232,25 @@ export const renderCard = (
 		.join("\n");
 };
 
+export const renderErrorCard = (
+	code: ErrorCode,
+	source?: Platform,
+	link?: string,
+): string => {
+	const error = ERRORS[code];
+	const back =
+		error.link && source && link
+			? `<footer>${emoji(SOURCE_ICONS[source])} ${anchor(link, `Open in ${PLATFORM_NAMES[source]}`)}</footer>`
+			: "";
+	return [
+		`<p>${emoji(error.icon)} <b>${error.title}</b></p>`,
+		`<blockquote>${error.text}</blockquote>`,
+		back,
+	]
+		.filter(Boolean)
+		.join("\n");
+};
+
 const FILENAMES = { video: "video.mp4", photo: "photo.jpg" } as const;
 
 // GramIO swaps uploaded Blobs for attach:// links in place, so pass copies.
@@ -236,6 +258,7 @@ export const sendRichMessage = async (
 	ctx: MessageContext,
 	html: string,
 	media: RichMedia[] = [],
+	params?: Parameters<MessageContext["sendRichMessage"]>[1],
 ): Promise<RichMessageResult> => {
 	const attachments = media.map((item, index) => ({
 		id: `media-${index}`,
@@ -249,11 +272,10 @@ export const sendRichMessage = async (
 					: item.media,
 		},
 	}));
-	const message = await ctx.sendRichMessage({
-		html,
-		media: attachments,
-		skip_entity_detection: true,
-	});
+	const message = await ctx.sendRichMessage(
+		{ html, media: attachments, skip_entity_detection: true },
+		params,
+	);
 	return message.payload;
 };
 

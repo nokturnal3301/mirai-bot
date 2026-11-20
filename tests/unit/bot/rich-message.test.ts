@@ -1,8 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { CARD_ICONS, SOURCE_ICONS } from "bot/constants";
+import { CARD_ICONS, ERRORS, SOURCE_ICONS } from "bot/constants";
 import {
 	descriptionChunks,
 	renderCard,
+	renderErrorCard,
 	richFileId,
 	sendRichMessage,
 } from "bot/rich-message";
@@ -167,6 +168,22 @@ describe("rich messages", () => {
 		expect(collageSizes(11)).toEqual([6, 5]);
 		expect(collageSizes(19)).toEqual([10, 9]);
 		expect(collageSizes(21)).toEqual([7, 7, 7]);
+	});
+
+	test("renders error cards with an icon, the reason and a link back to the post", () => {
+		expect(
+			renderErrorCard(
+				"AGE_RESTRICTED",
+				"tiktok",
+				"https://www.tiktok.com/@a/video/1?x=1&y=2",
+			),
+		).toBe(
+			`<p><tg-emoji emoji-id="${ERRORS.AGE_RESTRICTED.icon}"></tg-emoji> <b>Age-restricted post</b></p>\n<blockquote>Only signed-in users can see it, so I can't download it.</blockquote>\n<footer><tg-emoji emoji-id="${SOURCE_ICONS.tiktok}"></tg-emoji> <a href="https://www.tiktok.com/@a/video/1?x=1&amp;y=2">Open in TikTok</a></footer>`,
+		);
+		expect(
+			renderErrorCard("RATE_LIMITED", "tiktok", "https://www.tiktok.com/@a"),
+		).not.toContain("<footer>");
+		expect(renderErrorCard("EXTRACTION_FAILED")).not.toContain("<footer>");
 	});
 
 	test("escapes untrusted text and omits an empty quote", () => {

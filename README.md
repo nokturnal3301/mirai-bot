@@ -85,12 +85,17 @@ Carousels use `<tg-collage>` grids of up to ten items each, which mobile apps
 can draw. NSFW and spoiler posts are sent under `tg-spoiler`. Audio tracks use
 the standard audio player.
 
-Logos and stat icons come from the bot's own adaptive custom emoji set,
+Errors reply to the link with a small card: an icon and a title, the reason
+in a quote, and "Open in Instagram" (or another platform) when the post itself
+is the problem. Age-restricted Instagram and TikTok posts get their own card,
+because those platforms show them only to signed-in users.
+
+Logos, stat and error icons come from the bot's own adaptive custom emoji set,
 [Mirai Icons](https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot), which
-clients repaint in the text color. IDs live in `src/bot/constants.ts`; no pack
-installation or runtime lookup is needed. Telegram requires a Premium bot owner
-for custom emoji in private/group chats, or an additional username purchased on
-Fragment.
+clients repaint in the text color. Telegram takes each fallback emoji from the
+set. IDs live in `src/bot/constants.ts`; no pack installation or runtime lookup
+is needed. Telegram requires a Premium bot owner for custom emoji in
+private/group chats, or an additional username purchased on Fragment.
 
 Use a current Telegram client to view rich messages. These cards are forwardable;
 they do not use protected HTML widgets. `src/bot/rich-message.ts` renders the

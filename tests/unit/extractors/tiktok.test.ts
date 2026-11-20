@@ -353,7 +353,7 @@ describe("tiktok", () => {
 			expect(flow).toEqual({
 				_tag: "Fail",
 				error: {
-					code: "UPSTREAM_REJECTED",
+					code: "AGE_RESTRICTED",
 					message: "TikTok requires login for classified content",
 					retryable: false,
 					terminal: true,

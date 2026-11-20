@@ -88,13 +88,16 @@ const fetchGraphql = async (
 			?.gating_ruling;
 	if (ruling) {
 		return F.fail(
-			extractionError(
-				"UPSTREAM_REJECTED",
-				ruling.gating_type === 3
-					? "Instagram requires login for age-restricted content"
-					: "Instagram requires login for restricted content",
-				{ retryable: false, terminal: true },
-			),
+			ruling.gating_type === 3
+				? extractionError(
+						"AGE_RESTRICTED",
+						"Instagram requires login for age-restricted content",
+					)
+				: extractionError(
+						"UPSTREAM_REJECTED",
+						"Instagram requires login for restricted content",
+						{ retryable: false, terminal: true },
+					),
 		);
 	}
 	const media =

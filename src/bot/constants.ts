@@ -34,6 +34,15 @@ export const CARD_ICONS = {
 	reply: "5190681634659151988",
 } as const;
 
+export const PLATFORM_NAMES: Record<Platform, string> = {
+	instagram: "Instagram",
+	tiktok: "TikTok",
+	youtube: "YouTube",
+	threads: "Threads",
+	twitter: "X",
+	reddit: "Reddit",
+};
+
 // Reddit has no hashtags.
 export const HASHTAG_URLS: Partial<Record<Platform, (tag: string) => string>> =
 	{
@@ -65,13 +74,38 @@ export const AUDIO_EXT: Record<string, string> = {
 	"audio/webm": "webm",
 };
 
+// `link` points back to the post when the post itself is the problem.
 export const ERRORS = {
-	EXTRACTION_FAILED:
-		"Couldn't grab this one — the post might be private, deleted, or geo-restricted.",
-	FILE_TOO_LARGE:
-		"This media is too large for Telegram (max 50MB). Try a shorter one?",
-	RATE_LIMITED: "Slow down a bit — too many requests. Try again in a minute.",
-	UNKNOWN: "Something went wrong. Please try again later.",
+	AGE_RESTRICTED: {
+		icon: "5188172669383650843",
+		title: "Age-restricted post",
+		text: "Only signed-in users can see it, so I can't download it.",
+		link: true,
+	},
+	EXTRACTION_FAILED: {
+		icon: "5190453541830964074",
+		title: "Post unavailable",
+		text: "It may be private, deleted or blocked in our region.",
+		link: true,
+	},
+	FILE_TOO_LARGE: {
+		icon: "5188375834221652377",
+		title: "Too big for Telegram",
+		text: "Bots can send files up to 50 MB, and this one is bigger.",
+		link: true,
+	},
+	RATE_LIMITED: {
+		icon: "5190814031321016992",
+		title: "Too many links at once",
+		text: "Give me a minute and send it again.",
+		link: false,
+	},
+	UNKNOWN: {
+		icon: "5190468780374930958",
+		title: "Something went wrong",
+		text: "Try again in a bit.",
+		link: false,
+	},
 } as const;
 
 export type ErrorCode = keyof typeof ERRORS;

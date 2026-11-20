@@ -4,6 +4,7 @@ export type ExtractionErrorCode =
 	| "SCHEMA_MISMATCH"
 	| "DOWNLOAD_FAILED"
 	| "MEDIA_TOO_LARGE"
+	| "AGE_RESTRICTED"
 	| "NO_MEDIA"
 	| "ABORTED"
 	| "UNKNOWN";
@@ -67,6 +68,7 @@ const DEFAULTS: Record<
 	SCHEMA_MISMATCH: { retryable: false, terminal: false },
 	DOWNLOAD_FAILED: { retryable: true, terminal: false },
 	MEDIA_TOO_LARGE: { retryable: false, terminal: true },
+	AGE_RESTRICTED: { retryable: false, terminal: true },
 	NO_MEDIA: { retryable: true, terminal: false },
 	ABORTED: { retryable: false, terminal: true },
 	UNKNOWN: { retryable: false, terminal: false },
@@ -78,6 +80,7 @@ const ERROR_CODES = new Set<ExtractionErrorCode>([
 	"SCHEMA_MISMATCH",
 	"DOWNLOAD_FAILED",
 	"MEDIA_TOO_LARGE",
+	"AGE_RESTRICTED",
 	"NO_MEDIA",
 	"ABORTED",
 	"UNKNOWN",

@@ -23,6 +23,7 @@ import type {
 	WithExtractor,
 	WithMedia,
 } from "bot/types";
+import { renderErrorCard, sendRichMessage } from "bot/rich-message";
 import { isRemoteMediaResource, sendTelegramMedia } from "bot/telegram";
 
 const rateLimiter = createRateLimiter(config.rateLimit);
@@ -132,6 +133,7 @@ export const extract = async ({
 	if (result._tag === "Stop") return F.stop();
 	noteFailure(url, result.error.code, result.error.message);
 	if (result.error.code === "MEDIA_TOO_LARGE") return F.fail("FILE_TOO_LARGE");
+	if (result.error.code === "AGE_RESTRICTED") return F.fail("AGE_RESTRICTED");
 
 	logger.warn(
 		`[${extractor.platform}] extraction failed: ${result.error.code} ${result.error.message}`,
@@ -238,7 +240,13 @@ export const sendMedia = async ({
 export const replyError =
 	(ctx: MessageContext) =>
 	async (error: string): Promise<Flow<Ctx>> => {
-		const message = ERRORS[error as ErrorCode] ?? ERRORS.UNKNOWN;
-		await ctx.reply(message);
+		const code = Object.hasOwn(ERRORS, error)
+			? (error as ErrorCode)
+			: "UNKNOWN";
+		const url = findUrl(ctx.text ?? "") ?? undefined;
+		const source = url ? findExtractor(url)?.platform : undefined;
+		await sendRichMessage(ctx, renderErrorCard(code, source, url), [], {
+			reply_parameters: { message_id: ctx.id },
+		});
 		return F.stop();
 	};

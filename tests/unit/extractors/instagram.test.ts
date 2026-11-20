@@ -167,7 +167,7 @@ describe("instagram", () => {
 				expect(result).toEqual({
 					_tag: "Fail",
 					error: {
-						code: "UPSTREAM_REJECTED",
+						code: "AGE_RESTRICTED",
 						message: "Instagram requires login for age-restricted content",
 						retryable: false,
 						terminal: true,
