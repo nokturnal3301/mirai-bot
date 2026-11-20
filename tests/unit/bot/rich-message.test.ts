@@ -50,7 +50,7 @@ describe("rich messages", () => {
 			'<blockquote expandable>Claude. This is Codex.<br><br><a href="https://www.instagram.com/explore/tags/claude/">#claude</a> <a href="https://www.instagram.com/explore/tags/ai/">#ai</a></blockquote>',
 		);
 		expect(html).toContain(
-			`<footer><tg-emoji emoji-id="${SOURCE_ICONS.instagram.id}">📷</tg-emoji> <a href="https://www.instagram.com/p/abc/">@creator</a></footer>`,
+			`<footer><tg-emoji emoji-id="${SOURCE_ICONS.instagram}"></tg-emoji> <a href="https://www.instagram.com/p/abc/">@creator</a></footer>`,
 		);
 		expect(html.indexOf("<video")).toBeLessThan(html.indexOf("<blockquote"));
 		expect(html.indexOf("<blockquote")).toBeLessThan(html.indexOf("<footer>"));
@@ -80,7 +80,7 @@ describe("rich messages", () => {
 			],
 		);
 		const icon = (name: keyof typeof CARD_ICONS) =>
-			`<tg-emoji emoji-id="${CARD_ICONS[name].id}">${CARD_ICONS[name].alt}</tg-emoji>`;
+			`<tg-emoji emoji-id="${CARD_ICONS[name]}"></tg-emoji>`;
 		expect(html).toContain(
 			`</tg-emoji> <b>Creator</b> ✓ @creator · 720p<br>${icon("views")} 1.2M · ${icon("likes")} 48.3K · ${icon("comments")} 611 · <tg-time unix="1794267069" format="D">`,
 		);
@@ -119,7 +119,7 @@ describe("rich messages", () => {
 		);
 		expect(html).toContain("</tg-emoji> r/gaming · u/skvot_mag<br>");
 		expect(html).toContain(
-			`<tg-emoji emoji-id="${CARD_ICONS.score.id}">⬆️</tg-emoji> 8.4K`,
+			`<tg-emoji emoji-id="${CARD_ICONS.score}"></tg-emoji> 8.4K`,
 		);
 	});
 
@@ -131,7 +131,7 @@ describe("rich messages", () => {
 			quote: { author: "@numis", text: "rare" },
 		});
 		expect(html).toContain(
-			`<p><tg-emoji emoji-id="${CARD_ICONS.reply.id}">↩️</tg-emoji> Replying to <a href="https://x.com/coin">@coin</a></p>`,
+			`<p><tg-emoji emoji-id="${CARD_ICONS.reply}"></tg-emoji> Replying to <a href="https://x.com/coin">@coin</a></p>`,
 		);
 		expect(html).toContain(
 			'via <a href="https://x.com/friend">@friend</a> <a href="https://ex.com/a?b=1&amp;c=2">https://ex.com/a?b=1&amp;c=2</a>. mail me@ex.com',

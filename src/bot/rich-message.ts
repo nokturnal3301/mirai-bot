@@ -1,6 +1,5 @@
 import {
 	CARD_ICONS,
-	type CardIcon,
 	HASHTAG_URLS,
 	PROFILE_URLS,
 	SOURCE_ICONS,
@@ -73,8 +72,7 @@ const TOKENS =
 const clip = (value: string, max = 256): string =>
 	Array.from(value).slice(0, max).join("");
 
-const emoji = ({ id, alt }: CardIcon): string =>
-	`<tg-emoji emoji-id="${id}">${alt}</tg-emoji>`;
+const emoji = (id: string): string => `<tg-emoji emoji-id="${id}"></tg-emoji>`;
 
 const anchor = (href: string, label: string): string =>
 	`<a href="${escapeHtml(href)}">${label}</a>`;
@@ -150,7 +148,7 @@ const identity = (card: Card, media: RichMedia[]): string => {
 
 const statsLine = (card: Card): string => {
 	const { views, likes, score, comments } = card.stats ?? {};
-	const stat = (icon: CardIcon, value?: number) =>
+	const stat = (icon: string, value?: number) =>
 		value === undefined || !Number.isFinite(value)
 			? ""
 			: `${emoji(icon)} ${COMPACT.format(value)}`;

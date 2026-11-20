@@ -13,27 +13,26 @@ export const MESSAGES = {
 
 import type { Platform } from "extractors/types";
 
-export type CardIcon = { id: string; alt: string };
-
 // Our adaptive set https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot:
-// clients repaint the icons in the text color. IDs verified with getStickerSet.
-export const SOURCE_ICONS: Record<Platform, CardIcon> = {
-	instagram: { id: "5190500683392004927", alt: "📷" },
-	tiktok: { id: "5190625937523257703", alt: "🎶" },
-	youtube: { id: "5188349630626179937", alt: "▶️" },
-	threads: { id: "5190600760424967019", alt: "🧵" },
-	twitter: { id: "5188185764738934610", alt: "✖️" },
-	reddit: { id: "5188435555741904823", alt: "🤖" },
+// clients repaint the icons in the text color and Telegram takes the fallback
+// emoji from the set. IDs verified with getStickerSet.
+export const SOURCE_ICONS: Record<Platform, string> = {
+	instagram: "5190500683392004927",
+	tiktok: "5190625937523257703",
+	youtube: "5188349630626179937",
+	threads: "5190600760424967019",
+	twitter: "5188185764738934610",
+	reddit: "5188435555741904823",
 };
 
 export const CARD_ICONS = {
-	views: { id: "5188343871075037812", alt: "👁" },
-	likes: { id: "5188357597790513999", alt: "❤️" },
-	comments: { id: "5190723862777604934", alt: "💬" },
-	music: { id: "5188676559241786036", alt: "🎵" },
-	score: { id: "5188460908933853761", alt: "⬆️" },
-	reply: { id: "5190681634659151988", alt: "↩️" },
-} as const satisfies Record<string, CardIcon>;
+	views: "5188343871075037812",
+	likes: "5188357597790513999",
+	comments: "5190723862777604934",
+	music: "5188676559241786036",
+	score: "5188460908933853761",
+	reply: "5190681634659151988",
+} as const;
 
 // Reddit has no hashtags.
 export const HASHTAG_URLS: Partial<Record<Platform, (tag: string) => string>> =
