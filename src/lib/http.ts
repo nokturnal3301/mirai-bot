@@ -156,7 +156,7 @@ const fetchWithCheckedRedirects = async (
 	init: RequestInit & { proxy?: string },
 	signal: AbortSignal,
 	allowPrivate: boolean,
-): Promise<Response> => {
+): Promise<{ response: Response; finalUrl: string }> => {
 	const redirectMode = init.redirect ?? "follow";
 	let currentUrl = url;
 	let method = (init.method ?? "GET").toUpperCase();
@@ -181,7 +181,7 @@ const fetchWithCheckedRedirects = async (
 		}
 
 		if (redirectMode === "manual" || !REDIRECT_STATUSES.has(response.status)) {
-			return response;
+			return { response, finalUrl: currentUrl };
 		}
 		if (redirectMode === "error") {
 			await response.body?.cancel();
@@ -193,7 +193,7 @@ const fetchWithCheckedRedirects = async (
 		}
 
 		const location = response.headers.get("location");
-		if (!location) return response;
+		if (!location) return { response, finalUrl: currentUrl };
 		const nextUrl = new URL(location, currentUrl).toString();
 		if (!allowPrivate) assertPublicHttpUrl(nextUrl);
 
@@ -292,7 +292,7 @@ export async function http<R extends ResponseType = "json">(
 		const timeoutId = setTimeout(() => controller.abort(), timeout);
 
 		try {
-			const result = await fetchWithCheckedRedirects(
+			const { response: result, finalUrl } = await fetchWithCheckedRedirects(
 				url,
 				fetchInit,
 				signal,
@@ -323,7 +323,7 @@ export async function http<R extends ResponseType = "json">(
 					body: await blob.text(),
 					headers: result.headers,
 					status: result.status,
-					url: result.url,
+					url: finalUrl,
 				} as ResponseMap[R];
 			}
 

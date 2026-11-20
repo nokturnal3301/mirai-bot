@@ -111,6 +111,11 @@ describe("threads", () => {
 					},
 				},
 			});
+			expect(
+				fetchSpy.mock.calls.map(([input]) =>
+					String(input).replace("https://www.threads.com", ""),
+				),
+			).toEqual(["/share/BBRZCc2I7D/", `/@user/post/${postCode}`]);
 		} finally {
 			fetchSpy.mockRestore();
 		}
@@ -157,6 +162,9 @@ describe("threads", () => {
 					},
 				},
 			});
+			expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
+				`https://www.threads.com/@user/post/${postCode}`,
+			]);
 		} finally {
 			fetchSpy.mockRestore();
 		}

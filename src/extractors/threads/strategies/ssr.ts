@@ -35,33 +35,24 @@ const findPostInJson = (
 	return null;
 };
 
-const resolvePostCode = async (
+// Share links redirect straight to the post page, so one request follows them
+// instead of resolving the code first and loading /t/<code>, which redirects too.
+const fetchPost = async (
 	url: string,
 	signal: AbortSignal,
-): Promise<Flow<string, ExtractionError>> => {
-	const direct = extractPostCode(url);
-	if (direct) return F.of(direct);
-
-	const response = await http(url, {
+): Promise<Flow<ThreadsPost, ExtractionError>> => {
+	const page = await http(url, {
 		headers: HEADERS,
-		redirect: "manual",
-		responseType: "raw",
+		responseType: "textWithHeaders",
 		signal,
 	});
-	const location = response.headers.get("location");
-	await response.body?.cancel().catch(() => {});
-	return F.failIfNull(
-		extractionError("UPSTREAM_REJECTED", "invalid Threads share redirect"),
-		location ? extractPostCode(new URL(location, url).toString()) : null,
-	);
-};
-
-const fetchPost = async (
-	postCode: string,
-): Promise<Flow<ThreadsPost, ExtractionError>> => {
-	const pageUrl = `https://www.threads.com/t/${postCode}`;
-
-	const html = await http(pageUrl, { headers: HEADERS, responseType: "text" });
+	const postCode = extractPostCode(url) ?? extractPostCode(page.url);
+	if (!postCode) {
+		return F.fail(
+			extractionError("UPSTREAM_REJECTED", "invalid Threads share redirect"),
+		);
+	}
+	const html = page.body;
 
 	for (const match of html.matchAll(SCRIPT_PATTERN)) {
 		const raw = match[1];
@@ -92,25 +83,19 @@ const itemPlanOf = (
 		// proxy, but sending the media bytes through it is slower and less reliable.
 		const directContext = { forceProxy: false };
 		const proxyContext = getHttpContext() ?? { forceProxy: true };
+		const download = {
+			kind: "download" as const,
+			url: videoUrl,
+			headers: HEADERS,
+			attempts: 2,
+		};
 		return {
 			type: "video",
 			source: {
 				kind: "fallback",
 				sources: [
-					{
-						kind: "download",
-						url: videoUrl,
-						headers: HEADERS,
-						attempts: 2,
-						httpContext: directContext,
-					},
-					{
-						kind: "download",
-						url: videoUrl,
-						headers: HEADERS,
-						attempts: 2,
-						httpContext: proxyContext,
-					},
+					{ ...download, httpContext: directContext },
+					{ ...download, httpContext: proxyContext },
 				],
 			},
 			width,
@@ -200,8 +185,7 @@ export const ssr = defineStrategy(
 	"ssr",
 	(url: string, context): Promise<Flow<MediaPlan, ExtractionError>> =>
 		chain(F.of(url))
-			.pipe((url) => resolvePostCode(url, context.signal))
-			.pipe(fetchPost)
+			.pipe((url) => fetchPost(url, context.signal))
 			.pipe(buildPlan)
 			.run(),
 );
