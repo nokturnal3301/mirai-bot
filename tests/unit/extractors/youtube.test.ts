@@ -123,6 +123,7 @@ describe("youtube", () => {
 								mimeType: 'video/mp4; codecs="avc1.4d401f"',
 								width: 720,
 								height: 1280,
+								contentLength: "9280000",
 							},
 							{
 								url: "https://media.example/dubbed.m4a",
@@ -139,6 +140,7 @@ describe("youtube", () => {
 								url: originalAudioUrl,
 								mimeType: 'audio/mp4; codecs="mp4a.40.2"',
 								bitrate: 128_000,
+								contentLength: "2480000",
 								audioTrack: {
 									displayName: "Russian original",
 									id: "ru.4",
@@ -166,6 +168,8 @@ describe("youtube", () => {
 				expect(result.value.source.kind).toBe("mux");
 				if (result.value.source.kind !== "mux") return;
 				expect(result.value.source.audioUrl).toBe(originalAudioUrl);
+				expect(result.value.source.videoBytes).toBe(9_280_000);
+				expect(result.value.source.audioBytes).toBe(2_480_000);
 			} finally {
 				fetchSpy.mockRestore();
 			}

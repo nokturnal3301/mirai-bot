@@ -11,6 +11,7 @@ import { extractionError, F, defineStrategy, logger } from "lib";
 import { CLIENTS } from "extractors/youtube/constants";
 import {
 	captionOf,
+	declaredBytesOf,
 	estimatedBytesOf,
 	extractVideoId,
 	fetchVideoData,
@@ -20,6 +21,8 @@ import {
 type AdaptiveStreams = {
 	videoUrl: string;
 	audioUrl: string;
+	videoBytes?: number;
+	audioBytes?: number;
 	width?: number;
 	height?: number;
 	duration?: number;
@@ -96,6 +99,8 @@ const selectAdaptiveStreams = (
 	return F.of({
 		videoUrl: bestVideo.url,
 		audioUrl: bestAudio.url,
+		videoBytes: declaredBytesOf(bestVideo),
+		audioBytes: declaredBytesOf(bestAudio),
 		width: bestVideo.width,
 		height: bestVideo.height,
 		duration,
@@ -108,6 +113,8 @@ const selectAdaptiveStreams = (
 const buildPlan = ({
 	videoUrl,
 	audioUrl,
+	videoBytes,
+	audioBytes,
 	width,
 	height,
 	duration,
@@ -121,6 +128,8 @@ const buildPlan = ({
 			kind: "mux",
 			videoUrl,
 			audioUrl,
+			...(videoBytes ? { videoBytes } : {}),
+			...(audioBytes ? { audioBytes } : {}),
 			headers: { "User-Agent": userAgent },
 			videoCodecCompatible: codecCompatible,
 		},

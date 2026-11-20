@@ -13,6 +13,8 @@ import { assertPublicHttpUrl } from "./url";
 type MuxOptions = {
 	videoUrl: string;
 	audioUrl: string;
+	videoBytes?: number;
+	audioBytes?: number;
 	headers?: Record<string, string>;
 	timeout?: number;
 	signal?: AbortSignal;
@@ -67,7 +69,14 @@ const muxWithPermit = async (
 	options: MuxOptions,
 	controller: AbortController,
 ): Promise<Blob | null> => {
-	const { videoUrl, audioUrl, headers = {}, videoCodecCompatible } = options;
+	const {
+		videoUrl,
+		audioUrl,
+		videoBytes,
+		audioBytes,
+		headers = {},
+		videoCodecCompatible,
+	} = options;
 
 	const id = randomBytes(8).toString("hex");
 	const videoPath = join(tmpdir(), `mux-v-${id}`);
@@ -104,6 +113,7 @@ const muxWithPermit = async (
 			downloadInRanges(videoUrl, {
 				headers,
 				connections: CONNECTIONS_VIDEO,
+				...(videoBytes ? { expectedBytes: videoBytes } : {}),
 				maxBytes: config.telegram.maxFileSize,
 				label: "video",
 				signal: controller.signal,
@@ -112,6 +122,7 @@ const muxWithPermit = async (
 			downloadInRanges(audioUrl, {
 				headers,
 				connections: CONNECTIONS_AUDIO,
+				...(audioBytes ? { expectedBytes: audioBytes } : {}),
 				maxBytes: config.telegram.maxFileSize,
 				label: "audio",
 				signal: controller.signal,

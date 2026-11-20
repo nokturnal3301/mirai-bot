@@ -51,6 +51,9 @@ export type MuxSource = SourceMetadata &
 		kind: "mux";
 		videoUrl: string;
 		audioUrl: string;
+		// Exact sizes spare a size probe before each stream download.
+		videoBytes?: number;
+		audioBytes?: number;
 		timeout?: number;
 		videoCodecCompatible?: boolean;
 	}>;
@@ -181,6 +184,8 @@ const materializeVideoSource = async (
 					mux({
 						videoUrl: source.videoUrl,
 						audioUrl: source.audioUrl,
+						...(source.videoBytes ? { videoBytes: source.videoBytes } : {}),
+						...(source.audioBytes ? { audioBytes: source.audioBytes } : {}),
 						...(source.headers ? { headers: source.headers } : {}),
 						...(source.timeout !== undefined
 							? { timeout: source.timeout }

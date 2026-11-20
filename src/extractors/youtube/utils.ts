@@ -196,12 +196,19 @@ export const prefetchEngagement = (
 	};
 };
 
+export const declaredBytesOf = (
+	format: InnertubeFormat,
+): number | undefined => {
+	const declared = Number(format.contentLength);
+	return Number.isFinite(declared) && declared > 0 ? declared : undefined;
+};
+
 export const estimatedBytesOf = (
 	format: InnertubeFormat,
 	durationSeconds?: number,
 ): number | undefined => {
-	const declared = Number(format.contentLength);
-	if (Number.isFinite(declared) && declared > 0) return declared;
+	const declared = declaredBytesOf(format);
+	if (declared !== undefined) return declared;
 	if (!format.bitrate || !durationSeconds) return undefined;
 	return Math.ceil((format.bitrate * durationSeconds) / 8);
 };
