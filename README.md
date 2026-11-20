@@ -84,8 +84,8 @@ Telegram requires a Premium bot owner for custom emoji in private/group chats,
 or an additional username purchased on Fragment.
 
 Use a current Telegram client to view rich messages. These cards are forwardable;
-they do not use protected HTML widgets. `src/bot/rich-message.ts` handles the
-new API method and multipart media uploads until GramIO supports them natively.
+they do not use protected HTML widgets. `src/bot/rich-message.ts` renders the
+card and sends it through GramIO, which uploads the nested media.
 
 ## Quick start
 

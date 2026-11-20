@@ -1,9 +1,7 @@
 import { SOURCE_ICONS } from "bot/constants";
 import type { MessageContext } from "bot/types";
-import { env } from "config";
 import type { Caption } from "extractors/types";
 
-// GramIO 0.4 doesn't yet serialize sendRichMessage's nested media uploads.
 export type RichMedia = {
 	type: "video" | "photo";
 	media: Blob | string;
@@ -100,57 +98,28 @@ export const renderCard = (
 		.join("\n");
 };
 
+const FILENAMES = { video: "video.mp4", photo: "photo.jpg" } as const;
+
+// GramIO swaps uploaded Blobs for attach:// links in place, so pass copies.
 export const sendRichMessage = async (
 	ctx: MessageContext,
 	html: string,
 	media: RichMedia[] = [],
 ): Promise<RichMessageResult> => {
-	const form = new FormData();
-	const attachments = media.map((item, index) => {
-		const id = `media-${index}`;
-		if (typeof item.media === "string") return { id, media: item };
-		const filename = item.type === "video" ? "video.mp4" : "photo.jpg";
-		form.append(id, item.media, filename);
-		return { id, media: { ...item, media: `attach://${id}` } };
-	});
-	const destination = {
-		chat_id: ctx.chatId,
-		...(ctx.threadId && ctx.isTopicMessage()
-			? { message_thread_id: ctx.threadId }
-			: {}),
-		...(ctx.businessConnectionId
-			? { business_connection_id: ctx.businessConnectionId }
-			: {}),
-	};
-	const params = {
-		...destination,
-		rich_message: { html, media: attachments },
-	};
-	const multipart = media.some((item) => item.media instanceof Blob);
-	if (multipart) {
-		for (const [key, value] of Object.entries(params)) {
-			form.set(
-				key,
-				typeof value === "object" ? JSON.stringify(value) : String(value),
-			);
-		}
-	}
-	const response = await fetch(
-		`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendRichMessage`,
-		{
-			method: "POST",
-			...(!multipart
-				? { headers: { "Content-Type": "application/json" } }
-				: {}),
-			body: multipart ? form : JSON.stringify(params),
-			signal: AbortSignal.timeout(120_000),
+	const attachments = media.map((item, index) => ({
+		id: `media-${index}`,
+		media: {
+			...item,
+			media:
+				item.media instanceof Blob
+					? new File([item.media], FILENAMES[item.type], {
+							type: item.media.type,
+						})
+					: item.media,
 		},
-	);
-	const result = (await response.json()) as
-		| { ok: true; result: RichMessageResult }
-		| { ok: false; description: string };
-	if (!result.ok) throw new Error(result.description);
-	return result.result;
+	}));
+	const message = await ctx.sendRichMessage({ html, media: attachments });
+	return message.payload;
 };
 
 export const richFileId = (

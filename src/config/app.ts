@@ -5,6 +5,7 @@ export const config = {
 		maxMessageText: 4096, // chars in a plain text message
 		maxCarouselItems: 20,
 		maxCarouselBytes: 50 * 1024 * 1024,
+		requestTimeout: 120_000, // per Bot API call, so uploads can't hang
 	},
 	youtube: {
 		maxQuality: 1080,

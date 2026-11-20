@@ -7,13 +7,32 @@ import {
 	sendRichMessage,
 } from "bot/rich-message";
 import type { MessageContext } from "bot/types";
+import { Bot, MessageContext as GramioMessageContext } from "gramio";
 
-const ctx = {
-	chatId: 123,
-	threadId: 42,
-	isTopicMessage: () => true,
-	businessConnectionId: "business-1",
-} as unknown as MessageContext;
+const bot = new Bot("test");
+const contextOf = (payload: object): MessageContext =>
+	new GramioMessageContext({
+		bot,
+		update_id: 1,
+		payload: { message_id: 1, date: 0, ...payload },
+	} as never) as unknown as MessageContext;
+
+const ctx = contextOf({
+	chat: { id: 123, type: "supergroup", is_forum: true },
+	message_thread_id: 42,
+	is_topic_message: true,
+	business_connection_id: "business-1",
+});
+
+const sent = (result: object) => ({
+	ok: true,
+	result: {
+		message_id: 2,
+		date: 0,
+		chat: { id: 123, type: "private" },
+		...result,
+	},
+});
 
 describe("rich messages", () => {
 	test("signs media with a quiet footer above closed details without buttons", () => {
@@ -90,14 +109,13 @@ describe("rich messages", () => {
 		const video = new Blob(["video bytes"], { type: "video/mp4" });
 		const photo = new Blob(["photo bytes"], { type: "image/jpeg" });
 		const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-			Response.json({
-				ok: true,
-				result: {
+			Response.json(
+				sent({
 					rich_message: {
 						blocks: [{ type: "video", video: { file_id: "uploaded" } }],
 					},
-				},
-			}),
+				}),
+			),
 		);
 		try {
 			const media = [
@@ -122,8 +140,11 @@ describe("rich messages", () => {
 			expect(form.get("chat_id")).toBe("123");
 			expect(form.get("message_thread_id")).toBe("42");
 			expect(form.get("business_connection_id")).toBe("business-1");
-			expect(await (form.get("media-0") as File).text()).toBe("video bytes");
-			expect(await (form.get("media-1") as File).text()).toBe("photo bytes");
+			const upload = form.get("file-0") as File;
+			expect(upload.name).toBe("video.mp4");
+			expect(upload.type).toBe("video/mp4");
+			expect(await upload.text()).toBe("video bytes");
+			expect(await (form.get("file-1") as File).text()).toBe("photo bytes");
 			const rich = JSON.parse(String(form.get("rich_message")));
 			expect(rich.html).toContain("<tg-collage>");
 			expect(rich.html).not.toContain("0:12");
@@ -132,12 +153,12 @@ describe("rich messages", () => {
 					id: "media-0",
 					media: {
 						type: "video",
-						media: "attach://media-0",
+						media: "attach://file-0",
 						supports_streaming: true,
 						duration: 12,
 					},
 				},
-				{ id: "media-1", media: { type: "photo", media: "attach://media-1" } },
+				{ id: "media-1", media: { type: "photo", media: "attach://file-1" } },
 				{ id: "media-2", media: { type: "photo", media: "existing-photo" } },
 			]);
 			expect(media[0]?.media).toBe(video);
@@ -149,9 +170,8 @@ describe("rich messages", () => {
 
 	test("reuses file IDs with JSON and selects the largest returned photo", async () => {
 		const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
-			Response.json({
-				ok: true,
-				result: {
+			Response.json(
+				sent({
 					rich_message: {
 						blocks: [
 							{
@@ -160,13 +180,13 @@ describe("rich messages", () => {
 							},
 						],
 					},
-				},
-			}),
+				}),
+			),
 		);
 		try {
 			const media = [{ type: "photo" as const, media: "cached-photo" }];
 			const message = await sendRichMessage(
-				{ chatId: 321 } as MessageContext,
+				contextOf({ chat: { id: 321, type: "private" } }),
 				renderCard(undefined, media),
 				media,
 			);
