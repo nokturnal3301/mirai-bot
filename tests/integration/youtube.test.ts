@@ -86,7 +86,10 @@ describe("YouTube download fallback", () => {
 			expect(sessions.size).toBe(1);
 			expect(sessions.has(undefined)).toBe(false);
 			expect(engagementSessions).toEqual([undefined]);
-			expect(spawnSpy).toHaveBeenCalledTimes(1);
+			const muxes = spawnSpy.mock.calls.filter(
+				([command]) => !(command as string[]).includes("-version"),
+			);
+			expect(muxes).toHaveLength(1);
 		} finally {
 			fetchSpy.mockRestore();
 			spawnSpy.mockRestore();

@@ -1,7 +1,13 @@
 import { Bot } from "gramio";
 
 import { config, env } from "config";
-import { closeCache, drainTasks, logger, setupGracefulShutdown } from "lib";
+import {
+	closeCache,
+	drainTasks,
+	logger,
+	setupGracefulShutdown,
+	warmFfmpeg,
+} from "lib";
 import { startHandler, errorHandler, messageHandler } from "bot/handlers";
 import { startCommand, helpCommand } from "bot/commands";
 
@@ -30,6 +36,8 @@ setupGracefulShutdown(async () => {
 		closeCache();
 	}
 });
+
+warmFfmpeg();
 
 await bot.api.setMyCommands({
 	commands: [

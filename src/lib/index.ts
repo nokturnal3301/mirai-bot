@@ -52,7 +52,7 @@ export {
 	type StrategyOptions,
 } from "./strategies";
 export type { CircuitBreakerPolicy } from "./circuit-breaker";
-export { mux } from "./ffmpeg";
+export { mux, warmFfmpeg } from "./ffmpeg";
 export {
 	setupGracefulShutdown,
 	trackTask,

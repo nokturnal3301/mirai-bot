@@ -10,6 +10,7 @@ import {
 	extractionErrorFrom,
 	mapConcurrent,
 	mux,
+	warmFfmpeg,
 	withHttpContext,
 } from "lib";
 
@@ -179,6 +180,7 @@ const materializeVideoSource = async (
 				...(source.httpContext ? { httpContext: source.httpContext } : {}),
 			};
 		case "mux": {
+			warmFfmpeg();
 			try {
 				const data = await inHttpContext(source.httpContext, () =>
 					mux({

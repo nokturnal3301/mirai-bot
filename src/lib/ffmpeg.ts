@@ -231,6 +231,20 @@ const muxWithPermit = async (
 	}
 };
 
+// A fresh container's first ffmpeg run reads ~120 shared libraries from disk,
+// about 0.6s on the server. A throwaway run started before the downloads
+// loads them while the network works.
+export const warmFfmpeg = (): void => {
+	try {
+		Bun.spawn(["ffmpeg", "-hide_banner", "-version"], {
+			stdout: "ignore",
+			stderr: "ignore",
+		});
+	} catch {
+		// The real mux reports a missing ffmpeg.
+	}
+};
+
 export const mux = async (options: MuxOptions): Promise<Blob | null> => {
 	assertPublicHttpUrl(options.videoUrl);
 	assertPublicHttpUrl(options.audioUrl);
