@@ -221,6 +221,10 @@ const sizeLabel = (bytes: number | undefined): string =>
 
 const TIKTOK_TARGET = strategyFact<TikTokTarget>("tiktok.target");
 
+// /photo/ pages carry no post data; the /video/ page of the same id does.
+const pageUrlOf = (url: string): string =>
+	url.replace(/\/photo\/(\d+)/, "/video/$1");
+
 export const resolveTikTokTarget = (
 	input: TikTokStrategyInput,
 	context: StrategyContext,
@@ -229,7 +233,7 @@ export const resolveTikTokTarget = (
 		const { url } = input;
 		const directId = url.match(POST_ID_PATTERN)?.[1];
 		if (directId && POST_URL_PATTERN.test(url)) {
-			return { pageUrl: url, postId: directId };
+			return { pageUrl: pageUrlOf(url), postId: directId };
 		}
 
 		if (!SHORT_URL_PATTERN.test(url)) {
@@ -256,7 +260,7 @@ export const resolveTikTokTarget = (
 			);
 		}
 
-		return { pageUrl, postId };
+		return { pageUrl: pageUrlOf(pageUrl), postId };
 	});
 
 export type TikTokVideoSource = {

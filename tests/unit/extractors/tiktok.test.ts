@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { tiktok } from "extractors/tiktok/extractor";
 import { solveChallenge } from "extractors/tiktok/utils";
 import { SSRItemSchema } from "extractors/tiktok/schemas";
@@ -11,6 +11,8 @@ import {
 	videoUrlOf,
 } from "extractors/tiktok/utils";
 import { DOWNLOAD_CONNECTIONS } from "extractors/tiktok/constants";
+import { web } from "extractors/tiktok/strategies/web";
+import { execute, sequence } from "lib";
 
 const buildChallengeHtml = (wci: string, cs: string) =>
 	`<div id="wci" class="${wci}"></div><div id="cs" class="${cs}"></div>`;
@@ -339,6 +341,30 @@ describe("tiktok", () => {
 				url: "https://cdn.test/80.mp4",
 				oversized: true,
 			});
+		});
+	});
+
+	describe("web strategy", () => {
+		test("loads photo posts through their /video/ page, which carries the data", async () => {
+			const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+				new Response("<html></html>"),
+			);
+			try {
+				await execute({
+					tag: "tiktok-test",
+					input: {
+						url: "https://www.tiktok.com/@user/photo/7710083543078194452",
+					},
+					plan: sequence([web.with({ kind: "direct", cost: "cheap" })]),
+				}).run();
+
+				const [input] = fetchSpy.mock.calls[0] ?? [];
+				expect(String(input instanceof Request ? input.url : input)).toBe(
+					"https://www.tiktok.com/@user/video/7710083543078194452",
+				);
+			} finally {
+				fetchSpy.mockRestore();
+			}
 		});
 	});
 
