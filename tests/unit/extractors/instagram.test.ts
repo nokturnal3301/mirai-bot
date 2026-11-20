@@ -369,10 +369,16 @@ describe("instagram", () => {
 				_tag: "Continue",
 				value: {
 					type: "carousel",
-					items: [{ type: "photo" }],
+					items: [
+						{ type: "photo", source: { httpContext: { forceProxy: false } } },
+					],
 					caption: { music: "Мій рід — Artem Pivovarov" },
 					audio: {
-						source: { kind: "download", url: "https://cdn.example/track.m4a" },
+						source: {
+							kind: "download",
+							url: "https://cdn.example/track.m4a",
+							httpContext: { forceProxy: false },
+						},
 						duration: 30,
 						title: "Мій рід",
 						performer: "Artem Pivovarov",

@@ -33,6 +33,10 @@ export const extractShortcode = (url: string): string | null => {
 	return match?.[1] ?? null;
 };
 
+// fbcdn signed URLs are not IP-bound, so media bytes always try the fast
+// datacenter link first, even when the post came through the proxy.
+const DIRECT = { forceProxy: false };
+
 const SHORTCODE_ALPHABET =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -249,10 +253,7 @@ const itemPlanOf = (
 	const duration = item.video_duration
 		? Math.round(item.video_duration)
 		: undefined;
-	// fbcdn signed URLs are not IP-bound: pull bytes direct from the datacenter
-	// link even when the post was extracted through the proxy, keeping the proxy
-	// only as a fallback for edges that reject the datacenter IP.
-	const directCtx = { forceProxy: false };
+	// The proxy stays as a fallback for edges that reject the datacenter IP.
 	const proxyCtx = getHttpContext() ?? { forceProxy: true };
 	const sources: AtomicVideoSource[] = [];
 	const streams = item.video_dash_manifest
@@ -264,7 +265,7 @@ const itemPlanOf = (
 			videoUrl: streams.videoUrl,
 			audioUrl: streams.audioUrl,
 			videoCodecCompatible: streams.codecCompatible,
-			httpContext: directCtx,
+			httpContext: DIRECT,
 		});
 	}
 	const videoUrl = item.video_versions?.[0]?.url;
@@ -276,7 +277,7 @@ const itemPlanOf = (
 			attempts: 2,
 			connections: DOWNLOAD_CONNECTIONS,
 			minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
-			httpContext: directCtx,
+			httpContext: DIRECT,
 		});
 		sources.push({
 			kind: "download",
@@ -309,6 +310,7 @@ const itemPlanOf = (
 					url: image.url,
 					headers,
 					attempts: 2,
+					httpContext: DIRECT,
 				},
 				width: image.width ?? item.original_width,
 				height: image.height ?? item.original_height,
@@ -377,6 +379,7 @@ const audioOf = (
 			url: track.progressive_download_url,
 			headers,
 			attempts: 2,
+			httpContext: DIRECT,
 		},
 		duration: track.duration_in_ms
 			? Math.round(track.duration_in_ms / 1000)
