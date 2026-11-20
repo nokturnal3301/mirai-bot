@@ -17,6 +17,7 @@ import {
 	withCpuAdmission,
 } from "lib";
 import {
+	AUDIO_TIMEOUT_MS,
 	DOWNLOAD_CONNECTIONS,
 	DOWNLOAD_MIN_BYTES_PER_SECOND,
 	HEADERS,
@@ -132,13 +133,15 @@ export const buildTikTokMediaPlan = (
 
 	if (imageUrls.length > 0) {
 		// Downloaded with the photos: Telegram fetching TikTok's CDN itself can
-		// take 20s+ from the server.
+		// take 20s+ from the server. The card waits for it, so keep it short.
 		const audio = item.music?.playUrl
 			? {
 					source: {
 						kind: "download" as const,
 						url: item.music.playUrl,
 						headers: publicHeaders,
+						timeout: AUDIO_TIMEOUT_MS,
+						attempts: 2,
 					},
 					duration: item.music.duration,
 					title: item.music.title,

@@ -372,14 +372,17 @@ const sendCarousel = async (
 	if (media.audio) {
 		const { data, duration, title, performer } = media.audio;
 		const startedAt = performance.now();
-		await ctx.sendAudio(toAudioFile(data, title, performer), {
-			duration,
-			title,
-			performer,
+		// The card is already out, so a lost track must not turn into an error card.
+		await bestEffortTelegram("carousel audio", async () => {
+			await ctx.sendAudio(toAudioFile(data, title, performer), {
+				duration,
+				title,
+				performer,
+			});
+			logger.info(
+				`[send] carousel audio via ${typeof data === "string" ? "url" : "multipart"} in ${elapsedMs(startedAt)}`,
+			);
 		});
-		logger.info(
-			`[send] carousel audio via ${typeof data === "string" ? "url" : "multipart"} in ${elapsedMs(startedAt)}`,
-		);
 	}
 
 	await sendDescriptionOverflow(ctx, media.caption);
