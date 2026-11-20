@@ -71,5 +71,7 @@ export {
 	deleteCachedMedia,
 	closeCache,
 	normalizeUrl,
+	recordFailure,
 	type CachedMedia,
+	type Failure,
 } from "./cache";

@@ -153,6 +153,13 @@ PROXY_URL=http://user:pass@host:port \
   docker compose --profile prod up -d
 ```
 
+Container logs are lost on every redeploy, so the bot also keeps the last
+1,000 failed links in Redis with their platform and reason, newest first:
+
+```bash
+docker compose exec redis redis-cli LRANGE mirai:failures 0 49
+```
+
 ## Quality checks
 
 ```bash

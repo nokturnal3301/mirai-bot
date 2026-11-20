@@ -150,4 +150,32 @@ export const deleteCachedMedia = async (url: string): Promise<void> => {
 	}
 };
 
+export type Failure = {
+	platform: string;
+	url: string;
+	code: string;
+	message: string;
+};
+
+const FAILURES_KEY = "mirai:failures";
+const FAILURES_KEPT = 1_000;
+
+// Redis outlives deploys, unlike container logs:
+// docker compose exec redis redis-cli LRANGE mirai:failures 0 49
+export const recordFailure = async (failure: Failure): Promise<void> => {
+	if (!client) return;
+	if (Date.now() < bypassUntil) return;
+
+	const entry = JSON.stringify({ at: new Date().toISOString(), ...failure });
+	try {
+		await cacheOperation(client.lpush(FAILURES_KEY, entry));
+		await cacheOperation(client.ltrim(FAILURES_KEY, 0, FAILURES_KEPT - 1));
+	} catch (error) {
+		tripCircuit();
+		logger.warn(
+			`[cache] failure log failed: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+};
+
 export const closeCache = (): void => client?.close();

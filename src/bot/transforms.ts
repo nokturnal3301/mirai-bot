@@ -8,6 +8,7 @@ import {
 	findUrl,
 	createRateLimiter,
 	normalizeUrl,
+	recordFailure,
 	withStickyProxy,
 	type CachedMedia,
 	type ExtractionError,
@@ -31,6 +32,14 @@ const PROXY_ATTEMPTS = 2;
 
 const elapsedMs = (startedAt: number): string =>
 	`${(performance.now() - startedAt).toFixed(0)}ms`;
+
+const noteFailure = (url: string, code: string, message: string): void =>
+	void recordFailure({
+		platform: findExtractor(url)?.platform ?? "unknown",
+		url: normalizeUrl(url),
+		code,
+		message,
+	});
 
 export const logMessage = ({ ctx }: Ctx): Flow<Ctx> => {
 	requestStartedAt.set(ctx, performance.now());
@@ -121,6 +130,7 @@ export const extract = async ({
 	}
 
 	if (result._tag === "Stop") return F.stop();
+	noteFailure(url, result.error.code, result.error.message);
 	if (result.error.code === "MEDIA_TOO_LARGE") return F.fail("FILE_TOO_LARGE");
 
 	logger.warn(
@@ -186,7 +196,9 @@ export const checkFileSize = ({
 		(bytes) => bytes > config.telegram.maxFileSize,
 	);
 	if (overBytes !== undefined) {
-		logger.warn(`file too large: ${(overBytes / 1024 / 1024).toFixed(1)}MB`);
+		const size = `${(overBytes / 1024 / 1024).toFixed(1)}MB`;
+		logger.warn(`file too large: ${size}`);
+		noteFailure(url, "FILE_TOO_LARGE", size);
 		return F.fail("FILE_TOO_LARGE" satisfies ErrorCode);
 	}
 	return F.of({ ctx, url, media });
@@ -210,8 +222,10 @@ export const sendMedia = async ({
 			`[request] message=${ctx.id} failed in ${elapsedMs(requestStart)}`,
 		);
 		if (isResponseTooLargeFailure(error)) {
+			noteFailure(url, "FILE_TOO_LARGE", message);
 			return F.fail("FILE_TOO_LARGE" satisfies ErrorCode);
 		}
+		noteFailure(url, "SEND_FAILED", message);
 		throw error;
 	}
 	logger.info(`[send] ${media.type} complete in ${elapsedMs(startedAt)}`);
