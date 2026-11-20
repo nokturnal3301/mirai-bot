@@ -149,6 +149,7 @@ const readLimitedBlob = async (
 };
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const PAGE_TYPES = new Set<ResponseType>(["json", "text", "textWithHeaders"]);
 const MAX_REDIRECTS = 5;
 
 const fetchWithCheckedRedirects = async (
@@ -267,9 +268,12 @@ export async function http<R extends ResponseType = "json">(
 		...fetchRest
 	} = options ?? {};
 
-	const attempts = attemptsOpt ?? config.http.attempts;
-	const timeout = timeoutOpt ?? config.http.timeout;
 	const responseType = responseTypeOpt ?? "json";
+	const isPage = PAGE_TYPES.has(responseType);
+	const attempts =
+		attemptsOpt ?? (isPage ? config.http.pageAttempts : config.http.attempts);
+	const timeout =
+		timeoutOpt ?? (isPage ? config.http.pageTimeout : config.http.timeout);
 
 	const fetchInit: RequestInit & { proxy?: string } = { ...fetchRest };
 	const ctx = getHttpContext();

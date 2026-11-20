@@ -18,8 +18,12 @@ export const config = {
 		targetFileSize: 16 * 1024 * 1024,
 	},
 	http: {
+		// Media transfers can be large, so they get long deadlines.
 		timeout: 30_000,
 		attempts: 3,
+		// Pages and API answers are small: a stalled one is better retried soon.
+		pageTimeout: 10_000,
+		pageAttempts: 2,
 		maxDocumentSize: 5 * 1024 * 1024,
 	},
 	ffmpeg: {

@@ -156,6 +156,27 @@ describe("http", () => {
 		}
 	});
 
+	test("retries stalled pages fewer times than media transfers", async () => {
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+			(async () =>
+				new Response("busy", { status: 503 })) as unknown as typeof fetch,
+		);
+
+		try {
+			await expect(
+				http("https://example.com/page", { responseType: "text" }),
+			).rejects.toThrow("HTTP 503");
+			expect(fetchSpy).toHaveBeenCalledTimes(config.http.pageAttempts);
+			fetchSpy.mockClear();
+			await expect(
+				http("https://example.com/media", { responseType: "blob" }),
+			).rejects.toThrow("HTTP 503");
+			expect(fetchSpy).toHaveBeenCalledTimes(config.http.attempts);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
 	test("applies the default document limit to text and JSON", async () => {
 		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () =>
 			Response.json({
