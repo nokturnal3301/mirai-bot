@@ -84,6 +84,40 @@ describe("media plans", () => {
 		}
 	});
 
+	test("downloads several carousel photos at once", async () => {
+		let inFlight = 0;
+		let peak = 0;
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+			_input: RequestInfo | URL,
+		) => {
+			inFlight++;
+			peak = Math.max(peak, inFlight);
+			await Bun.sleep(20);
+			inFlight--;
+			return new Response("photo", {
+				headers: { "content-type": "image/jpeg" },
+			});
+		}) as typeof fetch);
+
+		try {
+			const result = await materializeMedia({
+				type: "carousel",
+				items: Array.from({ length: 8 }, (_, index) => ({
+					type: "photo" as const,
+					source: {
+						kind: "download" as const,
+						url: `https://cdn.example/${index}.jpg`,
+					},
+				})),
+			});
+
+			expect(result._tag).toBe("Continue");
+			expect(peak).toBe(6);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
 	test("materializes ready media without I/O", async () => {
 		const data = new Blob(["photo"], { type: "image/jpeg" });
 		const result = await materializeMedia({

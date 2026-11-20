@@ -424,7 +424,6 @@ export const buildInstagramMediaPlan = (
 					items,
 					caption,
 					...(audio ? { audio } : {}),
-					concurrency: 2,
 					maxBytes: config.telegram.maxCarouselBytes,
 				})
 			: F.fail(extractionError("NO_MEDIA", "no carousel media urls"));

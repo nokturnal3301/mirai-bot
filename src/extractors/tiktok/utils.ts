@@ -161,7 +161,6 @@ export const buildTikTokMediaPlan = (
 			})),
 			audio,
 			caption,
-			concurrency: 2,
 			maxBytes: config.telegram.maxCarouselBytes,
 		});
 	}

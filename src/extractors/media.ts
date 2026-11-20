@@ -114,7 +114,6 @@ export type MediaPlan =
 			items: readonly MediaItemPlan[];
 			caption?: Caption;
 			audio?: AudioPlan;
-			concurrency?: number;
 			maxBytes?: number;
 	  }>
 	| Readonly<{ type: "text"; caption: Caption }>;
@@ -275,25 +274,27 @@ const materializeAudio = async (
 	}
 };
 
+// Photos are small, so several download at once; videos already open
+// parallel ranges each.
+const carouselConcurrency = (items: readonly MediaItemPlan[]): number =>
+	items.some((item) => item.type === "video") ? 3 : 6;
+
 const materializeCarousel = async (
 	plan: Extract<MediaPlan, { type: "carousel" }>,
 	signal?: AbortSignal,
 ): Promise<Flow<Media, ExtractionError>> => {
 	const maxBytes = plan.maxBytes ?? config.telegram.maxCarouselBytes;
 	let totalBytes = 0;
+	const planned = plan.items.slice(0, config.telegram.maxCarouselItems);
 	const [materialized, audio] = await Promise.all([
-		mapConcurrent(
-			plan.items.slice(0, config.telegram.maxCarouselItems),
-			plan.concurrency ?? 2,
-			async (item) => {
-				const result = await materializeItem(item, signal);
-				if (!result) return null;
-				const bytes = result.data instanceof Blob ? result.data.size : 0;
-				if (totalBytes + bytes > maxBytes) return null;
-				totalBytes += bytes;
-				return result;
-			},
-		),
+		mapConcurrent(planned, carouselConcurrency(planned), async (item) => {
+			const result = await materializeItem(item, signal);
+			if (!result) return null;
+			const bytes = result.data instanceof Blob ? result.data.size : 0;
+			if (totalBytes + bytes > maxBytes) return null;
+			totalBytes += bytes;
+			return result;
+		}),
 		materializeAudio(plan.audio, signal),
 	]);
 	const items = materialized.filter((item): item is MediaItem => item !== null);
