@@ -174,7 +174,15 @@ export const buildTikTokMediaPlan = (
 			),
 		);
 	}
-	if (!source || source.url.includes("kmoat")) {
+	if (source?.url.includes("kmoat")) {
+		// The proxy gets the same protected URL, so retrying through it only adds delay.
+		return F.fail(
+			extractionError("NO_MEDIA", "TikTok video is kmoat-protected", {
+				retryable: false,
+			}),
+		);
+	}
+	if (!source) {
 		return F.fail(extractionError("NO_MEDIA", "no TikTok video URL"));
 	}
 	if (source.oversized) {

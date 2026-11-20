@@ -387,6 +387,27 @@ describe("tiktok", () => {
 			});
 		});
 
+		test("does not retry kmoat-protected videos through the proxy", () => {
+			const item = SSRItemSchema.parse({
+				video: {
+					bitrateInfo: [
+						{
+							Bitrate: 1_000_000,
+							PlayAddr: {
+								UrlList: ["https://v16-webapp.tiktok.com/kmoat/video.mp4"],
+								DataSize: 1024,
+							},
+						},
+					],
+				},
+			});
+
+			expect(buildTikTokMediaPlan(item, "", "page")).toMatchObject({
+				_tag: "Fail",
+				error: { code: "NO_MEDIA", retryable: false },
+			});
+		});
+
 		test("downloads video direct first, proxy as fallback", () => {
 			const item = SSRItemSchema.parse({
 				author: { uniqueId: "user" },
