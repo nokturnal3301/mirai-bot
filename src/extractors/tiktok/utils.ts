@@ -190,11 +190,13 @@ export const buildTikTokMediaPlan = (
 	// media transfer runs direct from the fast datacenter link even though the
 	// page was extracted through the residential proxy. The proxy is kept only
 	// as a fallback for the rare CDN edge that rejects the datacenter IP.
+	// TikTok's DataSize is the exact file size, which spares the size probe.
 	const authenticatedDownload = {
 		kind: "download" as const,
 		url: source.url,
 		headers: authenticatedHeaders,
 		connections: DOWNLOAD_CONNECTIONS,
+		...(source.size ? { expectedBytes: source.size } : {}),
 	};
 	return F.of({
 		type: "video",

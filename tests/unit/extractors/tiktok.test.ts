@@ -423,6 +423,7 @@ describe("tiktok", () => {
 						kind: "download",
 						url: "https://cdn.test/video.mp4",
 						connections: DOWNLOAD_CONNECTIONS,
+						expectedBytes: 5 * 1024 * 1024,
 						httpContext: { forceProxy: false },
 					},
 					{ kind: "download", httpContext: { forceProxy: true } },
