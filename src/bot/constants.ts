@@ -18,12 +18,12 @@ export type CardIcon = { id: string; alt: string };
 // Our adaptive set https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot:
 // clients repaint the icons in the text color. IDs verified with getStickerSet.
 export const SOURCE_ICONS: Record<Platform, CardIcon> = {
-	instagram: { id: "5190449148079419229", alt: "📷" },
-	tiktok: { id: "5190599579308960987", alt: "🎶" },
-	youtube: { id: "5188324277434229174", alt: "▶️" },
-	threads: { id: "5188635267426200843", alt: "🧵" },
-	twitter: { id: "5188444777036689824", alt: "✖️" },
-	reddit: { id: "5188148531667446459", alt: "🤖" },
+	instagram: { id: "5190500683392004927", alt: "📷" },
+	tiktok: { id: "5190625937523257703", alt: "🎶" },
+	youtube: { id: "5188349630626179937", alt: "▶️" },
+	threads: { id: "5190600760424967019", alt: "🧵" },
+	twitter: { id: "5188185764738934610", alt: "✖️" },
+	reddit: { id: "5188435555741904823", alt: "🤖" },
 };
 
 export const CARD_ICONS = {
