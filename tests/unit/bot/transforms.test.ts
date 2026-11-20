@@ -570,7 +570,7 @@ describe("sendMedia", () => {
 		expect(file.name).toBe("Track.m4a");
 	});
 
-	test("keeps an escaped description inside the collapsed block", async () => {
+	test("keeps an escaped description inside the expandable quote", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
 		const media = {
@@ -584,7 +584,7 @@ describe("sendMedia", () => {
 		const cards = calls.filter((call) => call.method === "sendRichMessage");
 		expect(cards).toHaveLength(1);
 		expect(cards[0]?.args[0]).toContain(
-			`<details><summary>Description</summary><p>${"&amp;".repeat(1_000)}</p></details>`,
+			`<blockquote expandable>${"&amp;".repeat(1_000)}</blockquote>`,
 		);
 	});
 
@@ -601,10 +601,10 @@ describe("sendMedia", () => {
 		const replies = calls.filter((call) => call.method === "sendRichMessage");
 		expect(replies).toHaveLength(2);
 		expect(replies[0]?.args[0]).toContain(
-			`${"a".repeat(29_999)}😀</p></details>`,
+			`${"a".repeat(29_999)}😀</blockquote>`,
 		);
 		expect(replies[1]?.args[0]).toContain(
-			"<details><summary>Description</summary><p>&amp;tail</p></details>",
+			"<blockquote expandable>&amp;tail</blockquote>",
 		);
 	});
 

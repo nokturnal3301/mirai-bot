@@ -1,6 +1,7 @@
 import type { Extractor, Media } from "extractors/types";
 import { materializeMedia, type MediaPlan } from "extractors/media";
 import {
+	F,
 	chain,
 	execute,
 	matchesHttpUrl,
@@ -11,6 +12,7 @@ import {
 } from "lib";
 import { adaptive } from "extractors/youtube/strategies/adaptive";
 import { combined } from "extractors/youtube/strategies/combined";
+import { prefetchEngagement } from "extractors/youtube/utils";
 import { SESSION_ROLLS } from "./constants";
 
 const withDownload = (
@@ -27,8 +29,9 @@ const withDownload = (
 export const youtube: Extractor = {
 	platform: "youtube",
 	match: (url) => matchesHttpUrl(url, ["youtube.com"], /^\/shorts\/[\w-]+/),
-	extract: (url) =>
-		retry("youtube", SESSION_ROLLS, () =>
+	extract: async (url) => {
+		const withEngagement = prefetchEngagement(url);
+		const result = await retry("youtube", SESSION_ROLLS, () =>
 			withStickyProxy(() =>
 				execute({
 					tag: "youtube",
@@ -41,5 +44,9 @@ export const youtube: Extractor = {
 					]),
 				}).run(),
 			),
-		),
+		);
+		return result._tag === "Continue"
+			? F.of(await withEngagement(result.value))
+			: result;
+	},
 };

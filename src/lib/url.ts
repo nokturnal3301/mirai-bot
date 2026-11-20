@@ -13,6 +13,22 @@ const PRIVATE_HOST_PATTERNS = [
 	/^\[?fe[89ab][0-9a-f]:/i,
 ];
 
+const HTML_ENTITIES: Record<string, string> = {
+	"&amp;": "&",
+	"&lt;": "<",
+	"&gt;": ">",
+	"&quot;": '"',
+	"&#39;": "'",
+	"&#x27;": "'",
+};
+
+// One pass, so an escaped entity like "&amp;lt;" decodes to "&lt;", not "<".
+export const decodeHtmlEntities = (value: string): string =>
+	value.replace(
+		/&(?:amp|lt|gt|quot|#39|#x27);/g,
+		(entity) => HTML_ENTITIES[entity] ?? entity,
+	);
+
 const normalizeHostname = (hostname: string): string =>
 	hostname.toLowerCase().replace(/\.$/, "");
 

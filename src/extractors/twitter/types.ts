@@ -1,1 +1,1 @@
-export type { MediaDetail } from "extractors/twitter/schemas";
+export type { MediaDetail, SyndicationTweet } from "extractors/twitter/schemas";

@@ -64,24 +64,33 @@ Videos, photos, carousels and text posts use Telegram's
 [Rich Messages](https://core.telegram.org/bots/api/rich-messages.md):
 
 ```text
+Reddit title [flair]
 [ Video / photo / collage ]
-[platform logo] @author · 0:19 · 720p
-▸ Description
+↩ Replying to @handle
+❝ Caption, expandable after a few lines ❞
+❝ Quoted post — @author ❞
+[logo] Name ✓ @author · 720p
+[views] 579K · [likes] 77K · [comments] 930 · Nov 12
+[music] Song — Artist
 ```
 
-The media is signed with a quiet `<footer>`: the platform logo, the author and,
-for a single video, its duration and quality. Carousels use `<tg-collage>`
-grids of up to ten items each, which mobile apps can draw. The description and hashtags are inside a native `<details>` block, closed
-by default. Tapping the description header expands it; tapping again collapses
-it. Media and footer stay visible. Empty descriptions
-omit the disclosure. Very long descriptions continue in additional collapsed
-cards rather than being truncated. Audio tracks use the standard audio player.
+The caption is an expandable `<blockquote>`; very long ones continue in more
+quotes rather than being truncated. The `<footer>` shows what the platform
+returns: name, verified mark and handle (`u/` on Reddit, the channel name on
+YouTube), quality for a single video, views, likes or Reddit score, comments,
+the post date as `<tg-time>` in the reader's locale, and the track. The handle
+links to the original post. Automatic entity detection is off, so mentions and
+hashtags link to the source platform instead of Telegram users or searches.
+Carousels use `<tg-collage>` grids of up to ten items each, which mobile apps
+can draw. NSFW and spoiler posts are sent under `tg-spoiler`. Audio tracks use
+the standard audio player.
 
-Platform logos use verified custom emoji from the public
-[tech logos](https://t.me/addemoji/app_set) pack. IDs live
-in `src/bot/constants.ts`; no pack installation or runtime lookup is needed.
-Telegram requires a Premium bot owner for custom emoji in private/group chats,
-or an additional username purchased on Fragment.
+Logos and stat icons come from the bot's own adaptive custom emoji set,
+[Mirai Icons](https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot), which
+clients repaint in the text color. IDs live in `src/bot/constants.ts`; no pack
+installation or runtime lookup is needed. Telegram requires a Premium bot owner
+for custom emoji in private/group chats, or an additional username purchased on
+Fragment.
 
 Use a current Telegram client to view rich messages. These cards are forwardable;
 they do not use protected HTML widgets. `src/bot/rich-message.ts` renders the

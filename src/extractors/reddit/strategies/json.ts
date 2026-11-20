@@ -12,6 +12,7 @@ import {
 	F,
 	chain,
 	defineStrategy,
+	decodeHtmlEntities,
 	http,
 	HttpStatusError,
 	logger,
@@ -19,7 +20,6 @@ import {
 import { HEADERS, IMAGE_HEADERS } from "extractors/reddit/constants";
 import { RedditListingSchema } from "extractors/reddit/schemas";
 import {
-	decodeHtmlEntities,
 	extractPostId,
 	extractShareId,
 	extractShortId,
@@ -107,11 +107,29 @@ const fetchPost = async (
 	);
 };
 
-const captionOf = (post: RedditPost): Caption => {
-	const title = post.title?.trim();
-	const selftext = post.selftext?.trim();
-	const text = [title, selftext].filter(Boolean).join("\n\n");
-	return { author: post.author, text };
+const cleanText = (value?: string | null): string | undefined =>
+	(value ? decodeHtmlEntities(value).trim() : "") || undefined;
+
+export const captionOf = (
+	post: RedditPost,
+	text = cleanText(post.selftext),
+): Caption => {
+	const author = post.author !== "[deleted]" ? post.author : undefined;
+	const title = cleanText(post.title);
+	const flair = cleanText(post.link_flair_text);
+	const hasStats = post.score !== undefined || post.num_comments !== undefined;
+	return {
+		...(author ? { author } : {}),
+		...(text ? { text } : {}),
+		...(title ? { title } : {}),
+		...(flair ? { flair } : {}),
+		...(post.subreddit ? { community: post.subreddit } : {}),
+		...(hasStats
+			? { stats: { score: post.score, comments: post.num_comments } }
+			: {}),
+		...(post.created_utc ? { postedAt: Math.floor(post.created_utc) } : {}),
+		...(post.over_18 || post.spoiler ? { sensitive: true } : {}),
+	};
 };
 
 const buildGalleryPlan = (
@@ -236,8 +254,6 @@ const buildImagePlan = (post: RedditPost): Flow<MediaPlan, ExtractionError> => {
 };
 
 const buildTextPost = (post: RedditPost): Flow<MediaPlan, ExtractionError> => {
-	const title = post.title?.trim();
-	const selftext = post.selftext?.trim();
 	const externalUrl =
 		!post.is_self &&
 		post.url &&
@@ -246,14 +262,13 @@ const buildTextPost = (post: RedditPost): Flow<MediaPlan, ExtractionError> => {
 			? post.url
 			: undefined;
 
-	const parts = [title, selftext, externalUrl].filter(Boolean) as string[];
-	const text = parts.join("\n\n");
-	if (!text) return F.stop();
+	const text = [cleanText(post.selftext), externalUrl]
+		.filter(Boolean)
+		.join("\n\n");
+	const caption = captionOf(post, text || undefined);
+	if (!caption.text && !caption.title) return F.stop();
 
-	return F.of({
-		type: "text",
-		caption: { author: post.author, text },
-	});
+	return F.of({ type: "text", caption });
 };
 
 const buildPlan = async (

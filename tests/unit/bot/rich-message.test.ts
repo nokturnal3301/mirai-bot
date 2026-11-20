@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { SOURCE_ICONS } from "bot/constants";
+import { CARD_ICONS, SOURCE_ICONS } from "bot/constants";
 import {
 	descriptionChunks,
 	renderCard,
@@ -35,46 +35,120 @@ const sent = (result: object) => ({
 });
 
 describe("rich messages", () => {
-	test("signs media with a quiet footer above closed details without buttons", () => {
+	test("puts the caption in an expandable quote above a linked footer", () => {
 		const html = renderCard(
 			{
 				source: "instagram",
 				author: "@creator",
 				text: "Claude. This is Codex.\n\n#claude #ai",
+				link: "https://www.instagram.com/p/abc/",
 			},
 			[{ type: "video", media: "file-id" }],
 		);
 		expect(html).toContain('<video src="tg://video?id=media-0"></video>');
 		expect(html).toContain(
-			`<footer><tg-emoji emoji-id="${SOURCE_ICONS.instagram}">✴️</tg-emoji> @creator</footer>`,
+			'<blockquote expandable>Claude. This is Codex.<br><br><a href="https://www.instagram.com/explore/tags/claude/">#claude</a> <a href="https://www.instagram.com/explore/tags/ai/">#ai</a></blockquote>',
 		);
 		expect(html).toContain(
-			"<details><summary>Description</summary><p>Claude. This is Codex.<br><br>#claude #ai</p></details>",
+			`<footer><tg-emoji emoji-id="${SOURCE_ICONS.instagram.id}">📷</tg-emoji> <a href="https://www.instagram.com/p/abc/">@creator</a></footer>`,
 		);
-		expect(html).not.toContain("<details open");
-		expect(html.indexOf("<video")).toBeLessThan(html.indexOf("<footer>"));
-		expect(html.indexOf("<footer>")).toBeLessThan(html.indexOf("<details>"));
+		expect(html.indexOf("<video")).toBeLessThan(html.indexOf("<blockquote"));
+		expect(html.indexOf("<blockquote")).toBeLessThan(html.indexOf("<footer>"));
+		expect(html).not.toContain("<details");
 		expect(html).not.toContain("<tg-button");
 	});
 
-	test("adds duration and quality for a single video", () => {
-		const signed = (duration: number) =>
-			renderCard({ source: "tiktok", author: "creator" }, [
+	test("shows the author, quality, stats, date and track in the footer", () => {
+		const html = renderCard(
+			{
+				source: "tiktok",
+				author: "creator",
+				name: "Creator",
+				verified: true,
+				stats: { views: 1_234_567, likes: 48_300, comments: 611 },
+				postedAt: 1_794_267_069,
+				music: "original sound — Creator",
+			},
+			[
 				{
 					type: "video",
 					media: "file-id",
 					width: 720,
 					height: 1280,
-					duration,
+					duration: 19,
 				},
-			]);
-		expect(signed(19)).toContain("</tg-emoji> @creator · 0:19 · 720p</footer>");
-		expect(signed(3725)).toContain("@creator · 1:02:05 · 720p</footer>");
+			],
+		);
+		const icon = (name: keyof typeof CARD_ICONS) =>
+			`<tg-emoji emoji-id="${CARD_ICONS[name].id}">${CARD_ICONS[name].alt}</tg-emoji>`;
+		expect(html).toContain(
+			`</tg-emoji> <b>Creator</b> ✓ @creator · 720p<br>${icon("views")} 1.2M · ${icon("likes")} 48.3K · ${icon("comments")} 611 · <tg-time unix="1794267069" format="D">`,
+		);
+		expect(html).toContain(
+			`</tg-time><br>${icon("music")} original sound — Creator</footer>`,
+		);
+		expect(html).not.toContain("0:19");
 		expect(
 			renderCard({ author: "creator" }, [
 				{ type: "photo", media: "file-id", width: 1080, height: 1350 },
 			]),
 		).toContain("<footer>@creator</footer>");
+		expect(
+			renderCard({ source: "youtube", name: "Linus Tech Tips" }),
+		).toContain("</tg-emoji> Linus Tech Tips</footer>");
+	});
+
+	test("puts Reddit titles above the media and scores in the footer", () => {
+		const html = renderCard(
+			{
+				source: "reddit",
+				author: "skvot_mag",
+				community: "gaming",
+				title: "Big & bold",
+				flair: "OC",
+				text: "ask @someone about #tag",
+				stats: { score: 8423, comments: 612 },
+			},
+			[{ type: "photo", media: "file-id" }],
+		);
+		expect(html).toStartWith(
+			"<p><b>Big &amp; bold</b> <mark>OC</mark></p>\n<img",
+		);
+		expect(html).toContain(
+			"<blockquote expandable>ask @someone about #tag</blockquote>",
+		);
+		expect(html).toContain("</tg-emoji> r/gaming · u/skvot_mag<br>");
+		expect(html).toContain(
+			`<tg-emoji emoji-id="${CARD_ICONS.score.id}">⬆️</tg-emoji> 8.4K`,
+		);
+	});
+
+	test("links replies, quotes and mentions to the platform", () => {
+		const html = renderCard({
+			source: "twitter",
+			replyTo: "coin",
+			text: "via @friend https://ex.com/a?b=1&c=2. mail me@ex.com",
+			quote: { author: "@numis", text: "rare" },
+		});
+		expect(html).toContain(
+			`<p><tg-emoji emoji-id="${CARD_ICONS.reply.id}">↩️</tg-emoji> Replying to <a href="https://x.com/coin">@coin</a></p>`,
+		);
+		expect(html).toContain(
+			'via <a href="https://x.com/friend">@friend</a> <a href="https://ex.com/a?b=1&amp;c=2">https://ex.com/a?b=1&amp;c=2</a>. mail me@ex.com',
+		);
+		expect(html).toContain(
+			'<blockquote>rare<cite><a href="https://x.com/numis">@numis</a></cite></blockquote>',
+		);
+	});
+
+	test("blurs sensitive media", () => {
+		const html = renderCard({ sensitive: true }, [
+			{ type: "photo", media: "a" },
+			{ type: "video", media: "b" },
+		]);
+		expect(html).toBe(
+			'<tg-collage><img src="tg://photo?id=media-0" tg-spoiler/><video src="tg://video?id=media-1" tg-spoiler></video></tg-collage>',
+		);
 	});
 
 	test("splits large carousels into even collages of at most ten", () => {
@@ -95,7 +169,7 @@ describe("rich messages", () => {
 		expect(collageSizes(21)).toEqual([7, 7, 7]);
 	});
 
-	test("escapes untrusted text and omits empty details", () => {
+	test("escapes untrusted text and omits an empty quote", () => {
 		const html = renderCard({
 			author: '<script>&"',
 			text: '</details><video src="https://evil.example"/>',
@@ -103,10 +177,10 @@ describe("rich messages", () => {
 		expect(html).not.toContain("<script>");
 		expect(html).not.toContain('<video src="https://evil.example"');
 		expect(html).toContain(
-			"&lt;/details&gt;&lt;video src=&quot;https://evil.example&quot;/&gt;",
+			'&lt;/details&gt;&lt;video src=&quot;<a href="https://evil.example">https://evil.example</a>&quot;/&gt;',
 		);
 		expect(renderCard({ source: "youtube", text: "  " })).not.toContain(
-			"<details",
+			"<blockquote",
 		);
 	});
 
@@ -119,7 +193,9 @@ describe("rich messages", () => {
 		);
 		for (const chunk of chunks) {
 			expect(chunk.isWellFormed()).toBe(true);
-			expect(renderCard(undefined, [], chunk)).toContain("<details>");
+			expect(renderCard(undefined, [], chunk)).toContain(
+				"<blockquote expandable>",
+			);
 		}
 	});
 
@@ -166,6 +242,7 @@ describe("rich messages", () => {
 			const rich = JSON.parse(String(form.get("rich_message")));
 			expect(rich.html).toContain("<tg-collage>");
 			expect(rich.html).not.toContain("0:12");
+			expect(rich.skip_entity_detection).toBe(true);
 			expect(rich.media).toEqual([
 				{
 					id: "media-0",

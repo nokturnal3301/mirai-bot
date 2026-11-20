@@ -11,7 +11,11 @@ import {
 	HEADERS,
 } from "extractors/twitter/constants";
 import { SyndicationResponseSchema } from "extractors/twitter/schemas";
-import { extractTweetId, tweetToken } from "extractors/twitter/utils";
+import {
+	extractTweetId,
+	tweetCaption,
+	tweetToken,
+} from "extractors/twitter/utils";
 
 const sortedMp4Variants = (
 	detail: MediaDetail,
@@ -141,18 +145,10 @@ const fetchTweet = async (
 		);
 	}
 
-	const details = parsed.data.mediaDetails ?? [];
-
-	const noteTweet = (parsed.data as { note_tweet?: unknown }).note_tweet;
-	const text = noteTweet ? `${parsed.data.text ?? ""}…` : parsed.data.text;
-
-	const caption: Caption = {
-		source: "twitter",
-		author: parsed.data.user?.screen_name,
-		text,
-	};
-
-	return F.of({ details, caption });
+	return F.of({
+		details: parsed.data.mediaDetails ?? [],
+		caption: tweetCaption(parsed.data),
+	});
 };
 
 const buildPlan = async ({

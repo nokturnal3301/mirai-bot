@@ -55,14 +55,27 @@ export const ThreadsPostSchema = z.looseObject({
 	user: z
 		.looseObject({
 			username: z.string().nullish(),
+			full_name: z.string().nullish(),
+			is_verified: z.boolean().nullish(),
 		})
 		.nullish(),
+	like_count: z.number().nullish(),
+	like_and_view_counts_disabled: z.boolean().nullish(),
+	taken_at: z.number().nullish(),
 	text_post_app_info: z
 		.looseObject({
+			direct_reply_count: z.number().nullish(),
+			is_spoiler_media: z.boolean().nullish(),
 			linked_inline_media: QuotedAttachmentSchema.nullish(),
 			share_info: z
 				.looseObject({
 					quoted_attachment_post: QuotedAttachmentSchema.nullish(),
+					quoted_post: z
+						.looseObject({
+							caption: z.looseObject({ text: z.string().nullish() }).nullish(),
+							user: z.looseObject({ username: z.string().nullish() }).nullish(),
+						})
+						.nullish(),
 				})
 				.nullish(),
 		})

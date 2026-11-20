@@ -23,14 +23,42 @@ export const MediaDetailSchema = z.looseObject({
 		.optional(),
 });
 
-export const SyndicationResponseSchema = z.looseObject({
-	id_str: z.string().optional(),
+// Text fields shared by a tweet and the tweet it quotes.
+const TweetTextShape = {
 	text: z.string().optional(),
+	display_text_range: z.array(z.number()).optional(),
+	entities: z
+		.looseObject({
+			urls: z
+				.array(
+					z.looseObject({
+						url: z.string(),
+						expanded_url: z.string().optional(),
+					}),
+				)
+				.optional(),
+		})
+		.optional(),
 	user: z
 		.looseObject({
 			screen_name: z.string().optional(),
+			name: z.string().optional(),
+			verified: z.boolean().optional(),
+			is_blue_verified: z.boolean().optional(),
 		})
 		.optional(),
+} as const;
+
+export const SyndicationResponseSchema = z.looseObject({
+	...TweetTextShape,
+	id_str: z.string().optional(),
+	created_at: z.string().optional(),
+	favorite_count: z.number().optional(),
+	conversation_count: z.number().optional(),
+	possibly_sensitive: z.boolean().optional(),
+	in_reply_to_screen_name: z.string().optional(),
+	note_tweet: z.unknown().optional(),
+	quoted_tweet: z.looseObject(TweetTextShape).optional(),
 	mediaDetails: z.array(MediaDetailSchema).optional(),
 	photos: z
 		.array(
@@ -44,3 +72,4 @@ export const SyndicationResponseSchema = z.looseObject({
 });
 
 export type MediaDetail = z.infer<typeof MediaDetailSchema>;
+export type SyndicationTweet = z.infer<typeof SyndicationResponseSchema>;

@@ -1,9 +1,11 @@
 import { config } from "config";
 import type {
 	AtomicVideoSource,
+	AudioPlan,
 	MediaItemPlan,
 	MediaPlan,
 } from "extractors/media";
+import type { Caption } from "extractors/types";
 import type {
 	InstagramGraphMedia,
 	InstagramMedia,
@@ -15,6 +17,7 @@ import {
 	DOWNLOAD_MIN_BYTES_PER_SECOND,
 } from "./constants";
 import {
+	decodeHtmlEntities,
 	extractionError,
 	F,
 	getHttpContext,
@@ -167,6 +170,28 @@ const findGraphMedia = (
 	return null;
 };
 
+const graphMusicOf = (
+	media: InstagramGraphMedia,
+): InstagramMedia["clips_metadata"] => {
+	const music = media.clips_music_attribution_info;
+	if (!music?.song_name) return undefined;
+	return music.uses_original_audio
+		? {
+				original_sound_info: {
+					original_audio_title: music.song_name,
+					ig_artist: { username: music.artist_name },
+				},
+			}
+		: {
+				music_info: {
+					music_asset_info: {
+						title: music.song_name,
+						display_artist: music.artist_name,
+					},
+				},
+			};
+};
+
 const normalizeGraphMedia = (media: InstagramGraphMedia): InstagramMedia => {
 	const width = media.dimensions?.width;
 	const height = media.dimensions?.height;
@@ -197,6 +222,15 @@ const normalizeGraphMedia = (media: InstagramGraphMedia): InstagramMedia => {
 		caption: {
 			text: media.edge_media_to_caption?.edges?.[0]?.node?.text,
 		},
+		taken_at: media.taken_at_timestamp,
+		like_count:
+			media.edge_liked_by?.count ?? media.edge_media_preview_like?.count,
+		comment_count:
+			media.edge_media_to_comment?.count ??
+			media.edge_media_to_parent_comment?.count,
+		view_count: media.video_view_count,
+		like_and_view_counts_disabled: media.like_and_view_counts_disabled,
+		clips_metadata: graphMusicOf(media),
 	};
 };
 
@@ -282,6 +316,76 @@ const itemPlanOf = (
 		: null;
 };
 
+const musicOf = (media: InstagramMedia): string | undefined => {
+	const track =
+		media.clips_metadata?.music_info?.music_asset_info ??
+		media.music_metadata?.music_info?.music_asset_info;
+	if (track?.title) {
+		return decodeHtmlEntities(
+			[track.title, track.display_artist].filter(Boolean).join(" — "),
+		);
+	}
+	const original =
+		media.clips_metadata?.original_sound_info ??
+		media.music_metadata?.original_sound_info;
+	if (!original) return undefined;
+	return decodeHtmlEntities(
+		[
+			original.original_audio_title || "Original audio",
+			original.ig_artist?.username,
+		]
+			.filter(Boolean)
+			.join(" — "),
+	);
+};
+
+export const instagramCaptionOf = (media: InstagramMedia): Caption => {
+	const user = media.user ?? media.owner;
+	const hidden = media.like_and_view_counts_disabled === true;
+	const isVideo = media.media_type === 2 || !!media.video_versions?.length;
+	const views = isVideo
+		? (media.view_count ?? media.play_count ?? media.ig_play_count)
+		: undefined;
+	const stats = {
+		...(views != null && !hidden ? { views } : {}),
+		...(media.like_count != null && !hidden ? { likes: media.like_count } : {}),
+		...(media.comment_count != null ? { comments: media.comment_count } : {}),
+	};
+	const music = musicOf(media);
+	return {
+		...(user?.username ? { author: user.username } : {}),
+		...(user?.full_name ? { name: user.full_name } : {}),
+		...(user?.is_verified ? { verified: true } : {}),
+		...(media.caption?.text ? { text: media.caption.text } : {}),
+		...(Object.keys(stats).length > 0 ? { stats } : {}),
+		...(media.taken_at ? { postedAt: media.taken_at } : {}),
+		...(music ? { music } : {}),
+	};
+};
+
+// Photo posts can carry a licensed track; send it after the media like
+// TikTok photo slideshows.
+const audioOf = (
+	media: InstagramMedia,
+	headers: Record<string, string>,
+): AudioPlan | undefined => {
+	const track = media.music_metadata?.music_info?.music_asset_info;
+	if (!track?.progressive_download_url) return undefined;
+	return {
+		source: {
+			kind: "download",
+			url: track.progressive_download_url,
+			headers,
+			attempts: 2,
+		},
+		duration: track.duration_in_ms
+			? Math.round(track.duration_in_ms / 1000)
+			: undefined,
+		title: track.title ?? undefined,
+		performer: track.display_artist ?? undefined,
+	};
+};
+
 export const buildInstagramMediaPlan = (
 	media: InstagramMedia,
 	headers: Record<string, string> = CRAWLER_HEADERS,
@@ -307,10 +411,8 @@ export const buildInstagramMediaPlan = (
 		);
 	}
 
-	const caption = {
-		author: media.user?.username ?? media.owner?.username,
-		text: media.caption?.text,
-	};
+	const caption = instagramCaptionOf(media);
+	const audio = isVideo ? undefined : audioOf(media, headers);
 
 	if (media.carousel_media?.length) {
 		const items = media.carousel_media
@@ -321,6 +423,7 @@ export const buildInstagramMediaPlan = (
 					type: "carousel",
 					items,
 					caption,
+					...(audio ? { audio } : {}),
 					concurrency: 2,
 					maxBytes: config.telegram.maxCarouselBytes,
 				})
@@ -328,7 +431,8 @@ export const buildInstagramMediaPlan = (
 	}
 
 	const item = itemPlanOf(media, headers);
-	return item
-		? F.of({ ...item, caption } as MediaPlan)
-		: F.fail(extractionError("NO_MEDIA", "no media url"));
+	if (!item) return F.fail(extractionError("NO_MEDIA", "no media url"));
+	return audio && item.type === "photo"
+		? F.of({ type: "carousel", items: [item], caption, audio })
+		: F.of({ ...item, caption } as MediaPlan);
 };

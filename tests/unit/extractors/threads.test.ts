@@ -1,6 +1,6 @@
 import { describe, test, expect, spyOn } from "bun:test";
 import { threads } from "extractors/threads/extractor";
-import { extractPostCode } from "extractors/threads/utils";
+import { extractPostCode, postCaption } from "extractors/threads/utils";
 import { ThreadsPostSchema } from "extractors/threads/schemas";
 import { ssr } from "extractors/threads/strategies/ssr";
 import { execute, sequence } from "lib";
@@ -218,6 +218,61 @@ describe("threads", () => {
 			});
 			expect(parsed.image_versions2?.candidates?.length).toBe(2);
 			expect(parsed.video_versions).toBeUndefined();
+		});
+	});
+
+	describe("postCaption", () => {
+		const post = ThreadsPostSchema.parse({
+			code: "De921QjmXvg",
+			caption: { text: "Really enjoyed my conversation" },
+			user: {
+				username: "mosseri",
+				full_name: "Adam Mosseri",
+				is_verified: true,
+			},
+			like_count: 295,
+			taken_at: 1793036959,
+			text_post_app_info: {
+				direct_reply_count: 60,
+				share_info: {
+					quoted_post: {
+						caption: { text: "Instagram launches Features " },
+						user: { username: "colinandsamir" },
+					},
+				},
+			},
+		});
+
+		test("fills author, stats, date and quoted post", () => {
+			expect(postCaption(post)).toEqual({
+				source: "threads",
+				author: "mosseri",
+				name: "Adam Mosseri",
+				verified: true,
+				text: "Really enjoyed my conversation",
+				stats: { likes: 295, comments: 60 },
+				postedAt: 1793036959,
+				quote: { author: "colinandsamir", text: "Instagram launches Features" },
+			});
+		});
+
+		test("hides likes the author disabled and blurs spoiler media", () => {
+			const caption = postCaption({
+				...post,
+				like_and_view_counts_disabled: true,
+				text_post_app_info: { direct_reply_count: 3, is_spoiler_media: true },
+			});
+			expect(caption.stats).toEqual({ likes: undefined, comments: 3 });
+			expect(caption.quote).toBeUndefined();
+			expect(caption.sensitive).toBe(true);
+		});
+
+		test("leaves missing fields empty", () => {
+			const caption = postCaption(ThreadsPostSchema.parse({ code: "X" }));
+			expect(caption.name).toBeUndefined();
+			expect(caption.verified).toBeUndefined();
+			expect(caption.postedAt).toBeUndefined();
+			expect(caption.sensitive).toBeUndefined();
 		});
 	});
 });

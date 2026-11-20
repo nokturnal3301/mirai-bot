@@ -37,6 +37,64 @@ export const InnertubeResponseSchema = z.looseObject({
 			lengthSeconds: z.string().optional(),
 			author: z.string().optional(),
 			channelId: z.string().optional(),
+			shortDescription: z.string().optional(),
+			viewCount: z.string().optional(),
 		})
+		.optional(),
+});
+
+const RunsSchema = z.looseObject({
+	runs: z.array(z.looseObject({ text: z.string().optional() })).optional(),
+});
+
+export const NextResponseSchema = z.looseObject({
+	contents: z
+		.looseObject({
+			twoColumnWatchNextResults: z
+				.looseObject({
+					results: z
+						.looseObject({
+							results: z
+								.looseObject({
+									contents: z
+										.array(
+											z.looseObject({
+												videoPrimaryInfoRenderer: z
+													.looseObject({
+														dateText: z
+															.looseObject({
+																simpleText: z.string().optional(),
+															})
+															.optional(),
+													})
+													.optional(),
+											}),
+										)
+										.optional(),
+								})
+								.optional(),
+						})
+						.optional(),
+				})
+				.optional(),
+		})
+		.optional(),
+	engagementPanels: z
+		.array(
+			z.looseObject({
+				engagementPanelSectionListRenderer: z
+					.looseObject({
+						panelIdentifier: z.string().optional(),
+						header: z
+							.looseObject({
+								engagementPanelTitleHeaderRenderer: z
+									.looseObject({ contextualInfo: RunsSchema.optional() })
+									.optional(),
+							})
+							.optional(),
+					})
+					.optional(),
+			}),
+		)
 		.optional(),
 });

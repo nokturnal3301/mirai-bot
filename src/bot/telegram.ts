@@ -174,7 +174,7 @@ const sendVideo = async (
 		const attachments = [{ ...params, media: input }];
 		return sendRichMessage(
 			ctx,
-			renderCard(media.caption, attachments),
+			renderCard({ ...media.caption, link: url }, attachments),
 			attachments,
 		);
 	};
@@ -260,7 +260,7 @@ const sendPhoto = async (
 	const attachments = [{ type: "photo" as const, media: media.data }];
 	const message = await sendRichMessage(
 		ctx,
-		renderCard(media.caption, attachments),
+		renderCard({ ...media.caption, link: url }, attachments),
 		attachments,
 	);
 	const fileId = richFileId(message, "photo");
@@ -313,10 +313,11 @@ const sendAudio = async (
 
 const sendText = async (
 	ctx: MessageContext,
+	url: string,
 	media: Extract<Media, { type: "text" }>,
 ): Promise<void> => {
 	logger.info(`[send] text @${media.caption.author ?? "?"}`);
-	await sendRichMessage(ctx, renderCard(media.caption));
+	await sendRichMessage(ctx, renderCard({ ...media.caption, link: url }));
 	await sendDescriptionOverflow(ctx, media.caption);
 };
 
@@ -324,6 +325,7 @@ const RICH_MEDIA_LIMIT = 50;
 
 const sendCarousel = async (
 	ctx: MessageContext,
+	url: string,
 	media: Extract<Media, { type: "carousel" }>,
 ): Promise<void> => {
 	void bestEffortTelegram("carousel chat action", () =>
@@ -353,7 +355,12 @@ const sendCarousel = async (
 			}));
 		await sendRichMessage(
 			ctx,
-			renderCard(offset === 0 ? media.caption : undefined, attachments),
+			renderCard(
+				offset === 0
+					? { ...media.caption, link: url }
+					: { sensitive: media.caption?.sensitive },
+				attachments,
+			),
 			attachments,
 		);
 	}
@@ -383,9 +390,9 @@ export const sendTelegramMedia = async (
 		case "audio":
 			return sendAudio(ctx, url, media);
 		case "carousel":
-			return sendCarousel(ctx, media);
+			return sendCarousel(ctx, url, media);
 		case "text":
-			return sendText(ctx, media);
+			return sendText(ctx, url, media);
 		default:
 			media satisfies never;
 	}

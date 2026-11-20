@@ -40,11 +40,16 @@ describe("YouTube download fallback", () => {
 	test("downloads and muxes adaptive streams after a combined CDN rejection on the same route", async () => {
 		const mediaRequests: string[] = [];
 		const sessions = new Set<string | undefined>();
+		const engagementSessions: (string | undefined)[] = [];
 		let playerRequests = 0;
 		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
 			input,
 		) => {
 			const url = String(input);
+			if (url.includes("/youtubei/v1/next")) {
+				engagementSessions.push(getHttpContext()?.proxySession);
+				return Response.json({});
+			}
 			sessions.add(getHttpContext()?.proxySession);
 			if (url === "https://www.youtube.com/")
 				return new Response('"visitorData":"test"');
@@ -80,6 +85,7 @@ describe("YouTube download fallback", () => {
 			expect(mediaRequests).toEqual([COMBINED_URL, VIDEO_URL, AUDIO_URL]);
 			expect(sessions.size).toBe(1);
 			expect(sessions.has(undefined)).toBe(false);
+			expect(engagementSessions).toEqual([undefined]);
 			expect(spawnSpy).toHaveBeenCalledTimes(1);
 		} finally {
 			fetchSpy.mockRestore();
@@ -96,6 +102,7 @@ describe("YouTube download fallback", () => {
 			const url = String(input);
 			if (url === "https://www.youtube.com/")
 				return new Response('"visitorData":"test"');
+			if (url.includes("/youtubei/v1/next")) return Response.json({});
 			if (url.includes("/youtubei/v1/player")) {
 				playerRequests++;
 				return playerResponse();

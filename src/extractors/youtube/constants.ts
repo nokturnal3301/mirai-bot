@@ -6,6 +6,14 @@ export const CHROME_UA =
 export const YOUTUBE_HOME_URL = "https://www.youtube.com/";
 export const PLAYER_ENDPOINT =
 	"https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+export const NEXT_ENDPOINT =
+	"https://www.youtube.com/youtubei/v1/next?prettyPrint=false";
+export const NEXT_CLIENT = {
+	clientName: "WEB",
+	clientVersion: "2.20260708.00.00",
+	hl: "en",
+	gl: "US",
+};
 
 export const ATTESTATION_API_URL =
 	"https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa";
@@ -21,6 +29,9 @@ export const MINTER_RETRY_DELAY_MS = 60 * 1000;
 export const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 export const PLAYER_RESPONSE_TTL_MS = 2 * 60 * 1000;
 export const REQUEST_TIMEOUT_MS = 6_000;
+export const ENGAGEMENT_TIMEOUT_MS = 8_000;
+// How long a ready video may wait for likes, comments and the date.
+export const ENGAGEMENT_GRACE_MS = 1_000;
 export const DOWNLOAD_CONNECTIONS = 8;
 export const DOWNLOAD_MIN_BYTES_PER_SECOND = 512 * 1024;
 

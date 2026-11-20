@@ -6,6 +6,7 @@ import {
 	buildInstagramMediaPlan,
 	extractShortcode,
 	findInstagramGraphMedia,
+	instagramCaptionOf,
 	instagramMediaIdOf,
 	parseDashManifest,
 } from "extractors/instagram/utils";
@@ -259,6 +260,123 @@ describe("instagram", () => {
 				value: {
 					type: "carousel",
 					items: [{ type: "photo" }, { type: "video" }],
+				},
+			});
+		});
+
+		test("builds a caption with profile, stats, date and licensed track", () => {
+			expect(
+				instagramCaptionOf({
+					media_type: 2,
+					video_versions: [{ url: "https://cdn.example/reel.mp4" }],
+					user: {
+						username: "minimonkeydancing",
+						full_name: "Monkeyman",
+						is_verified: true,
+					},
+					caption: { text: "I love you like a love song" },
+					taken_at: 1794738049,
+					like_count: 42225,
+					comment_count: 83,
+					play_count: 190647,
+					clips_metadata: {
+						music_info: {
+							music_asset_info: {
+								title: "Love You Like A Love Song",
+								display_artist: "Selena Gomez &amp; The Scene",
+							},
+						},
+					},
+				}),
+			).toEqual({
+				author: "minimonkeydancing",
+				name: "Monkeyman",
+				verified: true,
+				text: "I love you like a love song",
+				stats: { views: 190647, likes: 42225, comments: 83 },
+				postedAt: 1794738049,
+				music: "Love You Like A Love Song — Selena Gomez & The Scene",
+			});
+		});
+
+		test("hides likes and views the author disabled and skips photo views", () => {
+			expect(
+				instagramCaptionOf({
+					image_versions2: {
+						candidates: [{ url: "https://cdn.example/1.jpg" }],
+					},
+					user: { username: "mirai", is_verified: false },
+					like_count: 10,
+					comment_count: 2,
+					view_count: 99,
+					like_and_view_counts_disabled: true,
+				}),
+			).toEqual({ author: "mirai", stats: { comments: 2 } });
+		});
+
+		test("keeps graph counts, views and original audio through normalization", () => {
+			const media = findInstagramGraphMedia(
+				{
+					shortcode: "REEL",
+					is_video: true,
+					video_url: "https://cdn.example/reel.mp4",
+					owner: { username: "cheekyboyos", is_verified: true },
+					video_view_count: 588573,
+					edge_liked_by: { count: 78347 },
+					edge_media_to_comment: { count: 946 },
+					clips_music_attribution_info: {
+						artist_name: "cheekyboyos",
+						song_name: "Original audio",
+						uses_original_audio: true,
+					},
+				},
+				"REEL",
+			);
+
+			expect(
+				buildInstagramMediaPlan(media as NonNullable<typeof media>),
+			).toMatchObject({
+				_tag: "Continue",
+				value: {
+					type: "video",
+					caption: {
+						author: "cheekyboyos",
+						verified: true,
+						stats: { views: 588573, likes: 78347, comments: 946 },
+						music: "Original audio — cheekyboyos",
+					},
+				},
+			});
+		});
+
+		test("sends a photo post's licensed track after the photo", () => {
+			const plan = buildInstagramMediaPlan({
+				media_type: 1,
+				image_versions2: { candidates: [{ url: "https://cdn.example/1.jpg" }] },
+				music_metadata: {
+					music_info: {
+						music_asset_info: {
+							title: "Мій рід",
+							display_artist: "Artem Pivovarov",
+							progressive_download_url: "https://cdn.example/track.m4a",
+							duration_in_ms: 30_400,
+						},
+					},
+				},
+			});
+
+			expect(plan).toMatchObject({
+				_tag: "Continue",
+				value: {
+					type: "carousel",
+					items: [{ type: "photo" }],
+					caption: { music: "Мій рід — Artem Pivovarov" },
+					audio: {
+						source: { kind: "download", url: "https://cdn.example/track.m4a" },
+						duration: 30,
+						title: "Мій рід",
+						performer: "Artem Pivovarov",
+					},
 				},
 			});
 		});

@@ -23,6 +23,7 @@ export {
 export { logger } from "./logger";
 export { F, chain, type Chain, type Flow } from "./flow";
 export {
+	decodeHtmlEntities,
 	findUrl,
 	isPublicHttpUrl,
 	assertPublicHttpUrl,

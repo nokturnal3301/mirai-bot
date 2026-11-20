@@ -1,6 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { twitter } from "extractors/twitter/extractor";
-import { extractTweetId, tweetToken } from "extractors/twitter/utils";
+import {
+	extractTweetId,
+	tweetCaption,
+	tweetText,
+	tweetToken,
+} from "extractors/twitter/utils";
 import { SyndicationResponseSchema } from "extractors/twitter/schemas";
 
 describe("twitter", () => {
@@ -141,6 +146,93 @@ describe("twitter", () => {
 				],
 			});
 			expect(parsed.mediaDetails?.[0]?.type).toBe("animated_gif");
+		});
+	});
+
+	describe("tweetText", () => {
+		test("drops reply mentions and the media link, expands and decodes", () => {
+			expect(
+				tweetText({
+					text: "@CNN To an exciting &amp; inspiring https://t.co/a1 future! https://t.co/media",
+					display_text_range: [5, 60],
+					entities: {
+						urls: [{ url: "https://t.co/a1", expanded_url: "https://x.ai" }],
+					},
+				}),
+			).toBe("To an exciting & inspiring https://x.ai future!");
+		});
+
+		test("counts the range in UTF-16 units of the escaped text", () => {
+			const text = "JUST IN: 🇺🇸 🏳️‍⚧️ sports. https://t.co/6gxS1dJf9d";
+			expect(
+				tweetText({ text, display_text_range: [0, text.indexOf(" https")] }),
+			).toBe("JUST IN: 🇺🇸 🏳️‍⚧️ sports.");
+		});
+
+		test("does not double-decode entities", () => {
+			expect(tweetText({ text: "a &amp;lt; b" })).toBe("a &lt; b");
+		});
+
+		test("returns undefined for empty text", () => {
+			expect(
+				tweetText({ text: "https://t.co/m", display_text_range: [0, 0] }),
+			).toBe(undefined);
+		});
+	});
+
+	describe("tweetCaption", () => {
+		const tweet = SyndicationResponseSchema.parse({
+			text: "@CNN Catching a Starship https://t.co/m",
+			display_text_range: [5, 24],
+			created_at: "2022-10-26T18:45:58.000Z",
+			favorite_count: 1222215,
+			conversation_count: 58043,
+			in_reply_to_screen_name: "CNN",
+			possibly_sensitive: true,
+			user: {
+				screen_name: "elonmusk",
+				name: "Elon Musk",
+				is_blue_verified: true,
+				verified: false,
+			},
+			quoted_tweet: {
+				text: "Don&#39;t Panic https://t.co/q",
+				display_text_range: [0, 15],
+				user: { screen_name: "SpaceX" },
+			},
+		});
+
+		test("fills author, stats, date, reply, quote and sensitivity", () => {
+			expect(tweetCaption(tweet)).toEqual({
+				source: "twitter",
+				author: "elonmusk",
+				name: "Elon Musk",
+				verified: true,
+				text: "Catching a Starship",
+				stats: { likes: 1222215, comments: 58043 },
+				postedAt: 1666809958,
+				replyTo: "CNN",
+				quote: { author: "SpaceX", text: "Don't Panic" },
+				sensitive: true,
+			});
+		});
+
+		test("treats a reply to yourself as a thread", () => {
+			const caption = tweetCaption({
+				...tweet,
+				in_reply_to_screen_name: "elonmusk",
+			});
+			expect(caption.replyTo).toBeUndefined();
+		});
+
+		test("marks syndication-truncated long tweets", () => {
+			const caption = tweetCaption({
+				text: "Long tweet",
+				note_tweet: { id: "1" },
+			});
+			expect(caption.text).toBe("Long tweet…");
+			expect(caption.verified).toBeUndefined();
+			expect(caption.sensitive).toBeUndefined();
 		});
 	});
 });

@@ -19,8 +19,32 @@ export type MediaItem = {
 
 export type Caption = {
 	source?: Platform;
+	// Handle without "@"; rendered as u/name on Reddit.
 	author?: string;
+	// Display name, or the channel name on YouTube.
+	name?: string;
+	verified?: boolean;
 	text?: string;
+	// Reddit post title and flair, shown above the media.
+	title?: string;
+	flair?: string;
+	// Subreddit without "r/".
+	community?: string;
+	stats?: {
+		views?: number;
+		likes?: number;
+		comments?: number;
+		score?: number;
+	};
+	// Unix seconds.
+	postedAt?: number;
+	// "Song — Artist".
+	music?: string;
+	// Handle the post replies to.
+	replyTo?: string;
+	quote?: { author?: string; text: string };
+	// NSFW or spoiler: media is sent blurred.
+	sensitive?: boolean;
 };
 
 export type RemoteMediaResource = {

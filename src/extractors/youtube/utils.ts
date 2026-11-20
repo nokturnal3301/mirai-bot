@@ -1,5 +1,6 @@
 import type { Flow } from "lib/flow";
 import type { StrategyContext } from "lib";
+import type { Caption, Media } from "extractors/types";
 import type {
 	Client,
 	InnertubeFormat,
@@ -32,8 +33,12 @@ import {
 	BOTGUARD_REQUEST_KEY,
 	CHROME_UA,
 	CLIENTS,
+	ENGAGEMENT_GRACE_MS,
+	ENGAGEMENT_TIMEOUT_MS,
 	MINTER_RETRY_DELAY_MS,
 	MINTER_TTL_MS,
+	NEXT_CLIENT,
+	NEXT_ENDPOINT,
 	PLAYER_ENDPOINT,
 	PLAYER_RESPONSE_TTL_MS,
 	REQUEST_TIMEOUT_MS,
@@ -42,7 +47,10 @@ import {
 	VIDEO_ID_PATTERNS,
 	YOUTUBE_HOME_URL,
 } from "extractors/youtube/constants";
-import { InnertubeResponseSchema } from "extractors/youtube/schemas";
+import {
+	InnertubeResponseSchema,
+	NextResponseSchema,
+} from "extractors/youtube/schemas";
 
 export const extractVideoId = (url: string): string | null => {
 	for (const pattern of VIDEO_ID_PATTERNS) {
@@ -50,6 +58,142 @@ export const extractVideoId = (url: string): string | null => {
 		if (match?.[1]) return match[1];
 	}
 	return null;
+};
+
+export const captionOf = (data: InnertubeResponse): Caption => {
+	const details = data.videoDetails;
+	const views = details?.viewCount ? Number(details.viewCount) : Number.NaN;
+	const text = [details?.title, details?.shortDescription]
+		.map((part) => part?.trim())
+		.filter(Boolean)
+		.join("\n\n");
+	return {
+		name: details?.author,
+		text: text || undefined,
+		...(Number.isFinite(views) ? { stats: { views } } : {}),
+	};
+};
+
+type Engagement = { likes?: number; comments?: number; postedAt?: number };
+
+const COUNT_SCALES: Record<string, number> = { K: 1e3, M: 1e6, B: 1e9 };
+
+export const parseCount = (text?: string): number | undefined => {
+	const match = text?.trim().match(/^([\d.,]+)\s*([KMB])?$/i);
+	if (!match?.[1]) return undefined;
+	const value =
+		Number(match[1].replace(/,/g, "")) *
+		(COUNT_SCALES[match[2]?.toUpperCase() ?? ""] ?? 1);
+	return Number.isFinite(value) ? Math.round(value) : undefined;
+};
+
+const MONTHS = [
+	"Jan",
+	"Feb",
+	"Mar",
+	"Apr",
+	"May",
+	"Jun",
+	"Jul",
+	"Aug",
+	"Sep",
+	"Oct",
+	"Nov",
+	"Dec",
+];
+
+// "Sep 17, 2026" or "Premiered Sep 17, 2026"; noon UTC keeps the calendar day.
+export const parsePublishDate = (text?: string): number | undefined => {
+	const match = text?.match(/\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4})\b/);
+	const month = match?.[1] ? MONTHS.indexOf(match[1]) : -1;
+	if (!match || month < 0) return undefined;
+	return Date.UTC(Number(match[3]), month, Number(match[2]), 12) / 1000;
+};
+
+const LIKE_PATTERNS = [
+	/"likeCountIfIndifferentNumber":"(\d+)"/,
+	/"accessibilityText":"like this video along with ([\d,]+) other people"/,
+];
+
+export const parseEngagement = (text: string): Engagement => {
+	const likes = parseCount(
+		LIKE_PATTERNS.map((pattern) => text.match(pattern)?.[1]).find(Boolean),
+	);
+	let json: unknown;
+	try {
+		json = JSON.parse(text);
+	} catch {
+		return { likes };
+	}
+	const parsed = NextResponseSchema.safeParse(json);
+	if (!parsed.success) return { likes };
+	const comments = parsed.data.engagementPanels
+		?.map((panel) => panel.engagementPanelSectionListRenderer)
+		.find(
+			(panel) => panel?.panelIdentifier === "engagement-panel-comments-section",
+		)?.header?.engagementPanelTitleHeaderRenderer?.contextualInfo
+		?.runs?.[0]?.text;
+	const date =
+		parsed.data.contents?.twoColumnWatchNextResults?.results?.results?.contents
+			?.map((content) => content.videoPrimaryInfoRenderer?.dateText?.simpleText)
+			.find(Boolean);
+	return {
+		likes,
+		comments: parseCount(comments),
+		postedAt: parsePublishDate(date),
+	};
+};
+
+// Metadata only: unlike media URLs it is not bound to the player's proxy route,
+// so it goes direct and never spends residential bandwidth.
+const fetchEngagement = async (
+	videoId: string,
+	signal: AbortSignal,
+): Promise<Engagement> =>
+	parseEngagement(
+		await http(NEXT_ENDPOINT, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "User-Agent": CHROME_UA },
+			body: JSON.stringify({ videoId, context: { client: NEXT_CLIENT } }),
+			responseType: "text",
+			attempts: 1,
+			timeout: ENGAGEMENT_TIMEOUT_MS,
+			signal,
+		}),
+	);
+
+const withEngagementCaption = (
+	caption: Caption | undefined,
+	{ likes, comments, postedAt }: Engagement,
+): Caption => ({
+	...caption,
+	stats: { ...caption?.stats, likes, comments },
+	postedAt: postedAt ?? caption?.postedAt,
+});
+
+// Starts with the extraction and waits at most ENGAGEMENT_GRACE_MS once the
+// video is ready, so likes and comments never delay delivery.
+export const prefetchEngagement = (
+	url: string,
+): ((media: Media) => Promise<Media>) => {
+	const controller = new AbortController();
+	const videoId = extractVideoId(url);
+	const pending = videoId
+		? fetchEngagement(videoId, controller.signal).catch((error) => {
+				logger.warn(`[youtube] engagement skipped: ${errorMessage(error)}`);
+				return undefined;
+			})
+		: Promise.resolve(undefined);
+	return async (media) => {
+		const engagement = await Promise.race([
+			pending,
+			Bun.sleep(ENGAGEMENT_GRACE_MS).then(() => undefined),
+		]);
+		controller.abort();
+		return engagement && media.type === "video"
+			? { ...media, caption: withEngagementCaption(media.caption, engagement) }
+			: media;
+	};
 };
 
 export const estimatedBytesOf = (

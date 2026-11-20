@@ -13,7 +13,7 @@ import {
 } from "lib";
 import { HEADERS, SCRIPT_PATTERN } from "extractors/threads/constants";
 import { ThreadsPostSchema } from "extractors/threads/schemas";
-import { extractPostCode } from "extractors/threads/utils";
+import { extractPostCode, postCaption } from "extractors/threads/utils";
 
 const findPostInJson = (
 	value: unknown,
@@ -152,11 +152,7 @@ const mediaSource = (post: ThreadsPost): ThreadsPost => {
 };
 
 const buildPlan = (post: ThreadsPost): Flow<MediaPlan, ExtractionError> => {
-	const caption = {
-		source: "threads" as const,
-		author: post.user?.username ?? undefined,
-		text: post.caption?.text ?? undefined,
-	};
+	const caption = postCaption(post);
 
 	const source = mediaSource(post);
 

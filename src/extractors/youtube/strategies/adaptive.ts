@@ -10,6 +10,7 @@ import { config } from "config";
 import { extractionError, F, defineStrategy, logger } from "lib";
 import { CLIENTS } from "extractors/youtube/constants";
 import {
+	captionOf,
 	estimatedBytesOf,
 	extractVideoId,
 	fetchVideoData,
@@ -90,10 +91,7 @@ const selectAdaptiveStreams = (
 		`[youtube] adaptive ${bestVideo.width}x${bestVideo.height} ${videoCodec || "?"}`,
 	);
 
-	const caption: Caption = {
-		author: data.videoDetails?.author,
-		text: data.videoDetails?.title,
-	};
+	const caption = captionOf(data);
 
 	return F.of({
 		videoUrl: bestVideo.url,

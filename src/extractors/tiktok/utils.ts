@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { MediaPlan } from "extractors/media";
+import type { Caption } from "extractors/types";
 import type { SSRItem } from "extractors/tiktok/schemas";
 import { SSRDataSchema } from "extractors/tiktok/schemas";
 import { config } from "config";
@@ -90,12 +91,38 @@ export const imageUrlsOf = (item: SSRItem): string[] =>
 		.map((image) => image.imageURL?.urlList?.[0])
 		.filter((url): url is string => !!url);
 
+const musicOf = (music: SSRItem["music"]): string | undefined => {
+	const title = music?.title?.trim();
+	const artist = music?.authorName?.trim();
+	if (!title) return artist || undefined;
+	return artist && !title.includes(artist) ? `${title} — ${artist}` : title;
+};
+
+export const captionOf = (item: SSRItem): Caption => {
+	const stats = {
+		views: item.stats?.playCount ?? item.statsV2?.playCount,
+		likes: item.stats?.diggCount ?? item.statsV2?.diggCount,
+		comments: item.stats?.commentCount ?? item.statsV2?.commentCount,
+	};
+	return {
+		author: item.author?.uniqueId,
+		name: item.author?.nickname?.trim() || undefined,
+		verified: item.author?.verified,
+		text: item.desc,
+		...(Object.values(stats).some((value) => value !== undefined)
+			? { stats }
+			: {}),
+		postedAt: item.createTime || undefined,
+		music: musicOf(item.music),
+	};
+};
+
 export const buildTikTokMediaPlan = (
 	item: SSRItem,
 	cookies: string,
 	route: "page" | "challenge",
 ): Flow<MediaPlan, ExtractionError> => {
-	const caption = { author: item.author?.uniqueId, text: item.desc };
+	const caption = captionOf(item);
 	const publicHeaders = {
 		...HEADERS,
 		Referer: "https://www.tiktok.com/",

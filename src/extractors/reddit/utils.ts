@@ -145,12 +145,3 @@ export const isNativeMediaUrl = (url: string): boolean =>
 	/^https?:\/\/(?:i|v)\.redd\.it\//.test(url) ||
 	/^https?:\/\/(?:www\.)?reddit\.com\/gallery\//.test(url) ||
 	/^https?:\/\/(?:www\.)?reddit\.com\/media\?/.test(url);
-
-export const decodeHtmlEntities = (s: string): string =>
-	s
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#x27;/g, "'")
-		.replace(/&#39;/g, "'");

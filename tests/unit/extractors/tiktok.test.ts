@@ -5,6 +5,7 @@ import { SSRItemSchema } from "extractors/tiktok/schemas";
 import { videoSourceOf } from "extractors/tiktok/utils";
 import {
 	buildTikTokMediaPlan,
+	captionOf,
 	imageUrlsOf,
 	parseTikTokItem,
 	videoUrlOf,
@@ -425,6 +426,67 @@ describe("tiktok", () => {
 			});
 			expect(parsed.music?.playUrl).toBe("https://cdn/audio.mp3");
 			expect(parsed.music?.title).toBeUndefined();
+		});
+	});
+
+	describe("captionOf", () => {
+		test("collects author, engagement, date and sound from a real-shaped item", () => {
+			const item = SSRItemSchema.parse({
+				desc: "#creatorsearchinsights #fyp",
+				createTime: "1794937148",
+				author: { uniqueId: "xawequ", nickname: "Nick", verified: true },
+				stats: { diggCount: 264200, commentCount: 788, playCount: 821200 },
+				statsV2: { diggCount: "1", commentCount: "1", playCount: "1" },
+				music: { title: "оригинальный звук", authorName: "clipterzy" },
+			});
+			expect(captionOf(item)).toEqual({
+				author: "xawequ",
+				name: "Nick",
+				verified: true,
+				text: "#creatorsearchinsights #fyp",
+				stats: { views: 821200, likes: 264200, comments: 788 },
+				postedAt: 1794937148,
+				music: "оригинальный звук — clipterzy",
+			});
+		});
+
+		test("falls back to string stats and keeps a sound title that names its author", () => {
+			const caption = captionOf(
+				SSRItemSchema.parse({
+					statsV2: {
+						diggCount: "23400",
+						commentCount: "191",
+						playCount: "176200",
+					},
+					music: {
+						title: "original sound - potuzhnoman",
+						authorName: "potuzhnoman",
+					},
+				}),
+			);
+			expect(caption.stats).toEqual({
+				views: 176200,
+				likes: 23400,
+				comments: 191,
+			});
+			expect(caption.music).toBe("original sound - potuzhnoman");
+		});
+
+		test("drops malformed engagement instead of failing the item", () => {
+			const parsed = SSRItemSchema.safeParse({
+				desc: "still works",
+				createTime: "soon",
+				author: { uniqueId: "user", verified: "yes" },
+				stats: { playCount: -5 },
+			});
+			expect(parsed.success).toBe(true);
+			if (!parsed.success) return;
+			const caption = captionOf(parsed.data);
+			expect(caption.text).toBe("still works");
+			expect(caption.stats).toBeUndefined();
+			expect(caption.postedAt).toBeUndefined();
+			expect(caption.verified).toBeUndefined();
+			expect(caption.music).toBeUndefined();
 		});
 	});
 });

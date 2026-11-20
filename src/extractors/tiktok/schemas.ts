@@ -6,15 +6,29 @@ const nonNegativeNumber = z.preprocess(
 	z.number().finite().nonnegative(),
 );
 
+// Engagement metadata never blocks extraction, so malformed values drop out.
+const StatsSchema = z
+	.looseObject({
+		playCount: nonNegativeNumber.optional(),
+		diggCount: nonNegativeNumber.optional(),
+		commentCount: nonNegativeNumber.optional(),
+	})
+	.optional()
+	.catch(undefined);
+
 export const SSRItemSchema = z.looseObject({
 	desc: z.string().optional(),
 	isContentClassified: z.boolean().optional(),
+	createTime: nonNegativeNumber.optional().catch(undefined),
 	author: z
 		.looseObject({
 			uniqueId: z.string().optional(),
 			nickname: z.string().optional(),
+			verified: z.boolean().optional().catch(undefined),
 		})
 		.optional(),
+	stats: StatsSchema,
+	statsV2: StatsSchema,
 	video: z
 		.looseObject({
 			bitrateInfo: z

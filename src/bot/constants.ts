@@ -13,15 +13,46 @@ export const MESSAGES = {
 
 import type { Platform } from "extractors/types";
 
-// Matching platform logos from https://t.me/addemoji/app_set.
-// IDs and artwork verified with getStickerSet; keep IDs as strings.
-export const SOURCE_ICONS: Record<Platform, string> = {
-	instagram: "5280708542934833772",
-	tiktok: "5249421449940196012",
-	youtube: "5248965805449700363",
-	threads: "5246853643612740845",
-	twitter: "5244967186602157741",
-	reddit: "5307693040771559084",
+export type CardIcon = { id: string; alt: string };
+
+// Our adaptive set https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot:
+// clients repaint the icons in the text color. IDs verified with getStickerSet.
+export const SOURCE_ICONS: Record<Platform, CardIcon> = {
+	instagram: { id: "5190474716019730493", alt: "📷" },
+	tiktok: { id: "5188557962309840121", alt: "🎶" },
+	youtube: { id: "5188307209234196016", alt: "▶️" },
+	threads: { id: "5188220261916272246", alt: "🧵" },
+	twitter: { id: "5188644192368243678", alt: "✖️" },
+	reddit: { id: "5190433900945519984", alt: "🤖" },
+};
+
+export const CARD_ICONS = {
+	views: { id: "5188343871075037812", alt: "👁" },
+	likes: { id: "5188357597790513999", alt: "❤️" },
+	comments: { id: "5190723862777604934", alt: "💬" },
+	music: { id: "5188676559241786036", alt: "🎵" },
+	score: { id: "5188460908933853761", alt: "⬆️" },
+	reply: { id: "5190681634659151988", alt: "↩️" },
+} as const satisfies Record<string, CardIcon>;
+
+// Reddit has no hashtags.
+export const HASHTAG_URLS: Partial<Record<Platform, (tag: string) => string>> =
+	{
+		instagram: (tag) => `https://www.instagram.com/explore/tags/${tag}/`,
+		tiktok: (tag) => `https://www.tiktok.com/tag/${tag}`,
+		youtube: (tag) => `https://www.youtube.com/hashtag/${tag}`,
+		threads: (tag) =>
+			`https://www.threads.com/search?q=%23${tag}&serp_type=tags`,
+		twitter: (tag) => `https://x.com/hashtag/${tag}`,
+	};
+
+export const PROFILE_URLS: Record<Platform, (handle: string) => string> = {
+	instagram: (handle) => `https://www.instagram.com/${handle}/`,
+	tiktok: (handle) => `https://www.tiktok.com/@${handle}`,
+	youtube: (handle) => `https://www.youtube.com/@${handle}`,
+	threads: (handle) => `https://www.threads.com/@${handle}`,
+	twitter: (handle) => `https://x.com/${handle}`,
+	reddit: (handle) => `https://www.reddit.com/user/${handle}/`,
 };
 
 export const AUDIO_EXT: Record<string, string> = {

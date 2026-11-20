@@ -13,6 +13,7 @@ import {
 	DOWNLOAD_MIN_BYTES_PER_SECOND,
 } from "extractors/youtube/constants";
 import {
+	captionOf,
 	estimatedBytesOf,
 	extractVideoId,
 	resolveVideoData,
@@ -50,10 +51,7 @@ const selectBestFormat = ({
 		return F.fail(extractionError("NO_MEDIA", "no combined YouTube format"));
 	}
 
-	const caption: Caption = {
-		author: data.videoDetails?.author,
-		text: data.videoDetails?.title,
-	};
+	const caption = captionOf(data);
 
 	return F.of({
 		format: bestVideo,

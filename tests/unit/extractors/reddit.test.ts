@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { reddit } from "extractors/reddit/extractor";
+import { decodeHtmlEntities } from "lib";
 import {
-	decodeHtmlEntities,
 	extractIReddId,
 	extractPostId,
 	extractShortId,
@@ -9,7 +9,11 @@ import {
 	isNativeMediaUrl,
 	shredditUrlOf,
 } from "extractors/reddit/utils";
-import { RedditListingSchema } from "extractors/reddit/schemas";
+import {
+	RedditListingSchema,
+	RedditPostSchema,
+} from "extractors/reddit/schemas";
+import { captionOf } from "extractors/reddit/strategies/json";
 
 describe("reddit", () => {
 	describe("match", () => {
@@ -102,6 +106,10 @@ describe("reddit", () => {
 		test("decodes &#x27; and &quot;", () => {
 			expect(decodeHtmlEntities("it&#x27;s &quot;ok&quot;")).toBe('it\'s "ok"');
 		});
+
+		test("decodes in one pass", () => {
+			expect(decodeHtmlEntities("&amp;lt;b&amp;gt;")).toBe("&lt;b&gt;");
+		});
 	});
 
 	describe("shredditUrlOf", () => {
@@ -114,6 +122,45 @@ describe("reddit", () => {
 			expect(url.pathname).toBe("/svc/shreddit/r/test/comments/abc123/title");
 			expect(url.searchParams.get("render-mode")).toBe("partial");
 			expect(url.searchParams.get("seeker-session")).toBe("false");
+		});
+	});
+
+	describe("captionOf", () => {
+		test("keeps the title apart and carries community, stats and flags", () => {
+			const post = RedditPostSchema.parse({
+				title: "Cats &amp; dogs",
+				selftext: " Body &lt;3 ",
+				author: "skvot_mag",
+				subreddit: "gaming",
+				link_flair_text: "Discussion",
+				score: 8421,
+				num_comments: 612,
+				created_utc: 1795171477.0,
+				over_18: false,
+				spoiler: true,
+			});
+
+			expect(captionOf(post)).toEqual({
+				author: "skvot_mag",
+				text: "Body <3",
+				title: "Cats & dogs",
+				flair: "Discussion",
+				community: "gaming",
+				stats: { score: 8421, comments: 612 },
+				postedAt: 1795171477,
+				sensitive: true,
+			});
+		});
+
+		test("drops deleted authors, null flair and empty text", () => {
+			const post = RedditPostSchema.parse({
+				title: "Only a title",
+				selftext: "",
+				author: "[deleted]",
+				link_flair_text: null,
+			});
+
+			expect(captionOf(post)).toEqual({ title: "Only a title" });
 		});
 	});
 
