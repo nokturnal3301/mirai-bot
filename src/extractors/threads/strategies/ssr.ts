@@ -11,7 +11,12 @@ import {
 	http,
 	logger,
 } from "lib";
-import { HEADERS, SCRIPT_PATTERN } from "extractors/threads/constants";
+import {
+	DOWNLOAD_CONNECTIONS,
+	DOWNLOAD_MIN_BYTES_PER_SECOND,
+	HEADERS,
+	SCRIPT_PATTERN,
+} from "extractors/threads/constants";
 import { ThreadsPostSchema } from "extractors/threads/schemas";
 import { extractPostCode, postCaption } from "extractors/threads/utils";
 
@@ -88,13 +93,18 @@ const itemPlanOf = (
 			url: videoUrl,
 			headers: HEADERS,
 			attempts: 2,
+			connections: DOWNLOAD_CONNECTIONS,
 		};
 		return {
 			type: "video",
 			source: {
 				kind: "fallback",
 				sources: [
-					{ ...download, httpContext: directContext },
+					{
+						...download,
+						minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
+						httpContext: directContext,
+					},
 					{ ...download, httpContext: proxyContext },
 				],
 			},
