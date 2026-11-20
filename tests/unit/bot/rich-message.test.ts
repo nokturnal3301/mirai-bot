@@ -77,6 +77,24 @@ describe("rich messages", () => {
 		).toContain("<footer>@creator</footer>");
 	});
 
+	test("splits large carousels into even collages of at most ten", () => {
+		const collageSizes = (count: number) =>
+			renderCard(
+				undefined,
+				Array.from({ length: count }, () => ({
+					type: "photo" as const,
+					media: "file-id",
+				})),
+			)
+				.split("</tg-collage>")
+				.slice(0, -1)
+				.map((collage) => collage.split("<img").length - 1);
+		expect(collageSizes(10)).toEqual([10]);
+		expect(collageSizes(11)).toEqual([6, 5]);
+		expect(collageSizes(19)).toEqual([10, 9]);
+		expect(collageSizes(21)).toEqual([7, 7, 7]);
+	});
+
 	test("escapes untrusted text and omits empty details", () => {
 		const html = renderCard({
 			author: '<script>&"',

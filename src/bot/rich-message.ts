@@ -41,6 +41,9 @@ export const descriptionChunks = (caption?: Caption): string[] => {
 	return chunks;
 };
 
+// Mobile apps don't draw collages beyond album size; split evenly instead.
+const COLLAGE_SIZE = 10;
+
 const formatDuration = (seconds: number): string => {
 	const total = Math.round(seconds);
 	const hours = Math.floor(total / 3600);
@@ -72,9 +75,15 @@ export const renderCard = (
 			? `<img src="tg://photo?id=media-${index}"/>`
 			: `<video src="tg://video?id=media-${index}"></video>`,
 	);
+	const collages = Math.ceil(elements.length / COLLAGE_SIZE);
+	const perCollage = Math.ceil(elements.length / collages);
 	const gallery =
 		elements.length > 1
-			? `<tg-collage>${elements.join("")}</tg-collage>`
+			? Array.from(
+					{ length: collages },
+					(_, i) =>
+						`<tg-collage>${elements.slice(i * perCollage, (i + 1) * perCollage).join("")}</tg-collage>`,
+				).join("\n")
 			: (elements[0] ?? "");
 	const author = caption?.author?.replace(/^@/, "");
 	const signature = [

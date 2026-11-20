@@ -70,8 +70,8 @@ Videos, photos, carousels and text posts use Telegram's
 ```
 
 The media is signed with a quiet `<footer>`: the platform logo, the author and,
-for a single video, its duration and quality. Carousels use a `<tg-collage>`
-grid. The description and hashtags are inside a native `<details>` block, closed
+for a single video, its duration and quality. Carousels use `<tg-collage>`
+grids of up to ten items each, which mobile apps can draw. The description and hashtags are inside a native `<details>` block, closed
 by default. Tapping the description header expands it; tapping again collapses
 it. Media and footer stay visible. Empty descriptions
 omit the disclosure. Very long descriptions continue in additional collapsed
