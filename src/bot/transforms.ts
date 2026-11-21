@@ -28,6 +28,7 @@ import type {
 import { renderErrorCard, sendRichMessage } from "bot/rich-message";
 import {
 	bestEffortTelegram,
+	chatLabel,
 	isChatUnreachable,
 	isInvalidFileId,
 	isRemoteMediaResource,
@@ -73,7 +74,7 @@ const noteFailure = (url: string, code: string, message: string): void =>
 export const logMessage = ({ ctx }: Ctx): Flow<Ctx> => {
 	requestStartedAt.set(ctx, performance.now());
 	logger.info(
-		`[message] update=${ctx.updateId ?? "?"} message=${ctx.id} chat=${ctx.chat.type} text=${(ctx.text ?? ctx.caption)?.length ?? 0}chars`,
+		`[message] update=${ctx.updateId ?? "?"} message=${ctx.id} chat=${chatLabel(ctx.chat)} text=${(ctx.text ?? ctx.caption)?.length ?? 0}chars`,
 	);
 
 	return F.of({ ctx });

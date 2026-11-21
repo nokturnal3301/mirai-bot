@@ -172,6 +172,15 @@ Container logs are lost on every redeploy, so the bot also keeps the last
 docker compose exec redis redis-cli LRANGE mirai:failures 0 49
 ```
 
+The log also shows where the bot is used. Each incoming message is logged with
+its group's title and id (private chats stay anonymous), and the bot logs when
+it is added to a group, removed from one, or given other rights there:
+
+```text
+[message] update=812 message=57 chat=supergroup "Memes" @memes (-1001234567890) text=41chars
+[chat] added to group "Family" (-4123456789)
+```
+
 Requests run side by side and their log lines interleave, so every line written
 while handling a message starts with that request's number:
 

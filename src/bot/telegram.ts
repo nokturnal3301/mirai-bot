@@ -24,6 +24,17 @@ import {
 export const messageOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
+type ChatLike = { id: number; type: string; title?: string; username?: string };
+
+// Groups and channels are named, so the logs show where the bot is used.
+// Private chats stay anonymous.
+export const chatLabel = ({ id, type, title, username }: ChatLike): string =>
+	type === "private"
+		? "private"
+		: [type, JSON.stringify(title ?? ""), username && `@${username}`, `(${id})`]
+				.filter(Boolean)
+				.join(" ");
+
 export const bestEffortTelegram = async (
 	label: string,
 	run: () => Promise<unknown>,

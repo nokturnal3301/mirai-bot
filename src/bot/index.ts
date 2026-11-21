@@ -8,7 +8,12 @@ import {
 	setupGracefulShutdown,
 	warmFfmpeg,
 } from "lib";
-import { startHandler, errorHandler, messageHandler } from "bot/handlers";
+import {
+	startHandler,
+	errorHandler,
+	membershipHandler,
+	messageHandler,
+} from "bot/handlers";
 import { startCommand, helpCommand } from "bot/commands";
 import { warmExtractors } from "extractors/registry";
 
@@ -26,6 +31,7 @@ const bot = new Bot(env.TELEGRAM_BOT_TOKEN, {
 	.command("start", startCommand)
 	.command("help", helpCommand)
 	.on("message", messageHandler)
+	.on("my_chat_member", membershipHandler)
 	.onError(({ kind, error }) => errorHandler(kind, error));
 
 setupGracefulShutdown(async () => {

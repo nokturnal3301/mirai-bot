@@ -2,6 +2,7 @@ import type { BotLike, ContextType } from "gramio";
 import type { Extractor, Media } from "extractors/types";
 
 export type MessageContext = ContextType<BotLike, "message">;
+export type MembershipContext = ContextType<BotLike, "my_chat_member">;
 
 export type Ctx<T = object> = { ctx: MessageContext } & T;
 export type WithLinks = Ctx<{ links: string[] }>;

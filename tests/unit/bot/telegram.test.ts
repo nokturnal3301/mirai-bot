@@ -1,6 +1,34 @@
 import { describe, expect, test } from "bun:test";
-import { deliverMedia } from "bot/telegram";
+import { chatLabel, deliverMedia } from "bot/telegram";
 import { getHttpContext } from "lib";
+
+describe("chat label", () => {
+	test("names a group with its title, public handle and id", () => {
+		expect(
+			chatLabel({
+				id: -1001234567890,
+				type: "supergroup",
+				title: "Мемы и котики",
+				username: "memes",
+			}),
+		).toBe('supergroup "Мемы и котики" @memes (-1001234567890)');
+		expect(chatLabel({ id: -42, type: "group", title: "Семья" })).toBe(
+			'group "Семья" (-42)',
+		);
+	});
+
+	test("keeps a title on one log line", () => {
+		expect(chatLabel({ id: -1, type: "group", title: 'a "b"\nc' })).toBe(
+			'group "a \\"b\\"\\nc" (-1)',
+		);
+	});
+
+	test("leaves private chats anonymous", () => {
+		expect(chatLabel({ id: 456, type: "private", username: "someone" })).toBe(
+			"private",
+		);
+	});
+});
 
 describe("telegram delivery", () => {
 	test("sends an upload Blob as multipart", async () => {
