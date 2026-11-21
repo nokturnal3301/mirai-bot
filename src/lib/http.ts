@@ -62,31 +62,30 @@ const contentLengthOf = (response: Response): number | undefined => {
 	return Number.isFinite(size) && size >= 0 ? size : undefined;
 };
 
-export const readResponseBytes = async (
+// Turns down a body whose announced size is over the limit before reading it.
+export const rejectOversized = async (
 	response: Response,
 	maxBytes: number,
-	onBytes?: (bytes: number) => void,
-): Promise<Uint8Array> => {
+): Promise<void> => {
 	const declaredSize = contentLengthOf(response);
 	if (declaredSize !== undefined && declaredSize > maxBytes) {
 		await response.body?.cancel();
 		throw responseTooLargeFailure(maxBytes, declaredSize);
 	}
+};
 
-	if (!response.body) return new Uint8Array();
+// Feeds the body to `take` chunk by chunk; a throw from `take` cancels the rest.
+const drain = async (
+	response: Response,
+	take: (chunk: Uint8Array) => void,
+): Promise<void> => {
+	if (!response.body) return;
 	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let size = 0;
 	try {
 		while (true) {
 			const { done, value } = await reader.read();
 			if (done) break;
-			size += value.byteLength;
-			if (size > maxBytes) {
-				throw responseTooLargeFailure(maxBytes, size);
-			}
-			onBytes?.(value.byteLength);
-			chunks.push(value);
+			take(value);
 		}
 	} catch (error) {
 		await reader.cancel(error).catch(() => {});
@@ -94,6 +93,23 @@ export const readResponseBytes = async (
 	} finally {
 		reader.releaseLock();
 	}
+};
+
+export const readResponseBytes = async (
+	response: Response,
+	maxBytes: number,
+	onBytes?: (bytes: number) => void,
+): Promise<Uint8Array> => {
+	await rejectOversized(response, maxBytes);
+
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	await drain(response, (chunk) => {
+		size += chunk.byteLength;
+		if (size > maxBytes) throw responseTooLargeFailure(maxBytes, size);
+		onBytes?.(chunk.byteLength);
+		chunks.push(chunk);
+	});
 
 	const output = new Uint8Array(size);
 	let offset = 0;
@@ -104,49 +120,38 @@ export const readResponseBytes = async (
 	return output;
 };
 
+// Writes the body straight into `target`, so a file assembled from parts is
+// held in memory once. Resolves with the number of bytes written.
+export const readResponseInto = async (
+	response: Response,
+	target: Uint8Array,
+	onBytes?: (bytes: number) => void,
+): Promise<number> => {
+	let offset = 0;
+	await drain(response, (chunk) => {
+		if (offset + chunk.byteLength > target.byteLength) {
+			throw new Error("response is longer than expected");
+		}
+		onBytes?.(chunk.byteLength);
+		target.set(chunk, offset);
+		offset += chunk.byteLength;
+	});
+	return offset;
+};
+
 const readLimitedBlob = async (
 	response: Response,
 	limit: number,
-): Promise<Blob> => {
-	const declaredSize = contentLengthOf(response);
-	if (declaredSize !== undefined && declaredSize > limit) {
-		await response.body?.cancel();
-		throw responseTooLargeFailure(limit, declaredSize);
-	}
-
-	if (!response.body) {
-		const blob = await response.blob();
-		if (blob.size > limit) throw responseTooLargeFailure(limit, blob.size);
-		return blob;
-	}
-
-	const reader = response.body.getReader();
-	const chunks: ArrayBuffer[] = [];
-	let size = 0;
-
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			size += value.byteLength;
-			if (size > limit) {
-				throw responseTooLargeFailure(limit, size);
-			}
-			const copy = new Uint8Array(value.byteLength);
-			copy.set(value);
-			chunks.push(copy.buffer);
-		}
-	} catch (error) {
-		await reader.cancel(error).catch(() => {});
-		throw error;
-	} finally {
-		reader.releaseLock();
-	}
-
-	return new Blob(chunks, {
+): Promise<Blob> =>
+	new Blob([(await readResponseBytes(response, limit)).buffer as ArrayBuffer], {
 		type: response.headers.get("content-type") ?? "",
 	});
-};
+
+// "name=value" pairs from the Set-Cookie headers, ready for a Cookie header.
+export const cookiePairs = (headers: Headers): string[] =>
+	(headers.getSetCookie?.() ?? [])
+		.map((cookie) => cookie.split(";")[0]?.trim())
+		.filter((pair): pair is string => !!pair);
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const PAGE_TYPES = new Set<ResponseType>(["json", "text", "textWithHeaders"]);

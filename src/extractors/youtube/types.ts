@@ -17,6 +17,15 @@ export type InnertubeResult = {
 	client: InnertubeClientTag;
 };
 
+// A client's final "no": only signing in would change it.
+export type Refusal = "age-restricted" | "removed" | "unavailable";
+
+// `refusal: null` is a block, a broken answer or an unknown status, so another
+// client or address may still play the video.
+export type ClientAnswer =
+	| { playable: InnertubeResult }
+	| { refusal: Refusal | null };
+
 type ClientContext = {
 	clientName: string;
 	clientVersion: string;

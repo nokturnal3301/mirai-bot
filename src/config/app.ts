@@ -1,8 +1,6 @@
 export const config = {
 	telegram: {
 		maxFileSize: 50 * 1024 * 1024, // 50 MB (cloud bot API upload limit)
-		maxMediaCaption: 1024, // chars in caption attached to a media message
-		maxMessageText: 4096, // chars in a plain text message
 		maxCarouselItems: 20,
 		maxCarouselBytes: 50 * 1024 * 1024,
 		requestTimeout: 120_000, // per Bot API call, so uploads can't hang
@@ -25,6 +23,11 @@ export const config = {
 		pageTimeout: 10_000,
 		pageAttempts: 2,
 		maxDocumentSize: 5 * 1024 * 1024,
+	},
+	downloads: {
+		// Requests downloading fresh media at once; the rest wait their turn.
+		// Each can hold a 50 MB file in memory until Telegram has it.
+		maxConcurrent: 4,
 	},
 	ffmpeg: {
 		timeout: 120_000,

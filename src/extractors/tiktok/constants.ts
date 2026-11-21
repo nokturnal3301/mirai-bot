@@ -4,9 +4,9 @@ export const HEADERS = {
 };
 
 export const POST_URL_PATTERN = /tiktok\.com\/@[^/]+\/(?:video|photo)\/(\d+)/;
-export const SHORT_URL_PATTERN = /(?:vm|vt)\.tiktok\.com/;
+export const SHORT_URL_PATTERN =
+	/(?:vm|vt)\.tiktok\.com|tiktok\.com\/t\/[\w-]+/;
 export const POST_ID_PATTERN = /(?:video|photo)\/(\d+)/;
 export const SSR_HEDGE_DELAY_MS = 250;
 export const DOWNLOAD_CONNECTIONS = 6;
-export const DOWNLOAD_MIN_BYTES_PER_SECOND = 512 * 1024;
 export const AUDIO_TIMEOUT_MS = 5_000;

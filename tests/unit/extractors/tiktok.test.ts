@@ -97,6 +97,11 @@ describe("tiktok", () => {
 			expect(tiktok.match("https://vt.tiktok.com/ABC123")).toBe(true);
 		});
 
+		test("matches tiktok.com/t/ share links", () => {
+			expect(tiktok.match("https://www.tiktok.com/t/ZTRabc123/")).toBe(true);
+			expect(tiktok.match("https://tiktok.com/t/ZTRabc123")).toBe(true);
+		});
+
 		test("does not match other domains", () => {
 			expect(tiktok.match("https://instagram.com/p/abc")).toBe(false);
 		});
@@ -362,6 +367,38 @@ describe("tiktok", () => {
 				expect(String(input instanceof Request ? input.url : input)).toBe(
 					"https://www.tiktok.com/@user/video/7710083543078194452",
 				);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
+		test("follows the redirect of a tiktok.com/t/ share link", async () => {
+			const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+				input: string | URL | Request,
+			) =>
+				String(input instanceof Request ? input.url : input).includes("/t/")
+					? new Response(null, {
+							status: 301,
+							headers: {
+								location:
+									"https://www.tiktok.com/@user/video/7710083543078194452?_r=1",
+							},
+						})
+					: new Response("<html></html>")) as typeof fetch);
+			try {
+				await execute({
+					tag: "tiktok-test",
+					input: { url: "https://www.tiktok.com/t/ZTRabc123/" },
+					plan: sequence([web.with({ kind: "direct", cost: "cheap" })]),
+				}).run();
+
+				const urls = fetchSpy.mock.calls.map(([input]) =>
+					String(input instanceof Request ? input.url : input),
+				);
+				expect(urls).toEqual([
+					"https://www.tiktok.com/t/ZTRabc123/",
+					"https://www.tiktok.com/@user/video/7710083543078194452?_r=1",
+				]);
 			} finally {
 				fetchSpy.mockRestore();
 			}

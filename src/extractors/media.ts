@@ -8,11 +8,14 @@ import {
 	download,
 	extractionError,
 	extractionErrorFrom,
+	getHttpContext,
+	logger,
 	mapConcurrent,
 	mux,
 	warmFfmpeg,
 	withHttpContext,
 } from "lib";
+import { DOWNLOAD_MIN_BYTES_PER_SECOND } from "./constants";
 
 type HttpContext = NonNullable<RemoteMediaResource["httpContext"]>;
 
@@ -122,6 +125,33 @@ export type MediaPlan =
 	  }>
 	| Readonly<{ type: "text"; caption: Caption }>;
 
+// CDN URLs are not bound to the address that asked for them, so the bytes go
+// straight from the datacenter first. The route the post came through, usually
+// the residential proxy, stays as a fallback for edges that refuse the direct one.
+export const directThenProxy = (
+	download: Omit<DownloadSource, "httpContext" | "minBytesPerSecond">,
+): [DownloadSource, DownloadSource] => [
+	{
+		...download,
+		minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
+		httpContext: { forceProxy: false },
+	},
+	{ ...download, httpContext: getHttpContext() ?? { forceProxy: true } },
+];
+
+// A post with a single photo or video is that item plus the post's caption.
+export const planOfItem = (
+	item: MediaItemPlan,
+	caption?: Caption,
+): MediaPlan => ({ ...item, caption });
+
+const messageOf = (error: unknown): string =>
+	error instanceof Error
+		? error.message
+		: typeof error === "object" && error !== null && "message" in error
+			? String(error.message)
+			: String(error);
+
 const inHttpContext = <T>(
 	context: HttpContext | undefined,
 	run: () => Promise<T>,
@@ -133,28 +163,52 @@ const downloadSource = (
 ): Promise<Blob> =>
 	inHttpContext(source.httpContext, () =>
 		download(source.url, {
-			...(source.headers ? { headers: source.headers } : {}),
-			...(signal ? { signal } : {}),
-			...(source.kind === "download" && source.attempts !== undefined
-				? { attempts: source.attempts }
-				: {}),
-			...(source.kind === "download" && source.timeout !== undefined
-				? { timeout: source.timeout }
-				: {}),
-			...(source.kind === "download" && source.proxy !== undefined
-				? { proxy: source.proxy }
-				: {}),
-			...(source.connections !== undefined
-				? { connections: source.connections }
-				: {}),
-			...(source.kind === "download" && source.expectedBytes !== undefined
-				? { expectedBytes: source.expectedBytes }
-				: {}),
-			...(source.kind === "download" && source.minBytesPerSecond !== undefined
-				? { minBytesPerSecond: source.minBytesPerSecond }
+			headers: source.headers,
+			connections: source.connections,
+			signal,
+			...(source.kind === "download"
+				? {
+						attempts: source.attempts,
+						timeout: source.timeout,
+						proxy: source.proxy,
+						expectedBytes: source.expectedBytes,
+						minBytesPerSecond: source.minBytesPerSecond,
+					}
 				: {}),
 		}),
 	);
+
+const muxSource = async (
+	source: MuxSource,
+	signal?: AbortSignal,
+): Promise<Blob> => {
+	warmFfmpeg();
+	const { videoUrl, audioUrl, videoBytes, audioBytes, headers, timeout } =
+		source;
+	try {
+		const data = await inHttpContext(source.httpContext, () =>
+			mux({
+				videoUrl,
+				audioUrl,
+				videoBytes,
+				audioBytes,
+				headers,
+				timeout,
+				videoCodecCompatible: source.videoCodecCompatible,
+				signal,
+			}),
+		);
+		if (!data) {
+			throw extractionError("DOWNLOAD_FAILED", "mux returned no data");
+		}
+		return data;
+	} catch (error) {
+		const typed = extractionErrorFrom(error);
+		throw typed.code === "UNKNOWN"
+			? extractionError("DOWNLOAD_FAILED", typed.message)
+			: typed;
+	}
+};
 
 const materializeVideoSource = async (
 	source: VideoSource,
@@ -165,50 +219,21 @@ const materializeVideoSource = async (
 			return source.data;
 		case "download":
 			return downloadSource(source, signal);
-		case "remote":
+		case "remote": {
+			const { url, headers, size, telegramFetch, connections, httpContext } =
+				source;
 			return {
 				kind: "remote",
-				url: source.url,
-				...(source.headers ? { headers: source.headers } : {}),
-				...(source.size !== undefined ? { size: source.size } : {}),
-				...(source.telegramFetch !== undefined
-					? { telegramFetch: source.telegramFetch }
-					: {}),
-				...(source.connections !== undefined
-					? { connections: source.connections }
-					: {}),
-				...(source.httpContext ? { httpContext: source.httpContext } : {}),
+				url,
+				headers,
+				size,
+				telegramFetch,
+				connections,
+				httpContext,
 			};
-		case "mux": {
-			warmFfmpeg();
-			try {
-				const data = await inHttpContext(source.httpContext, () =>
-					mux({
-						videoUrl: source.videoUrl,
-						audioUrl: source.audioUrl,
-						...(source.videoBytes ? { videoBytes: source.videoBytes } : {}),
-						...(source.audioBytes ? { audioBytes: source.audioBytes } : {}),
-						...(source.headers ? { headers: source.headers } : {}),
-						...(source.timeout !== undefined
-							? { timeout: source.timeout }
-							: {}),
-						...(source.videoCodecCompatible !== undefined
-							? { videoCodecCompatible: source.videoCodecCompatible }
-							: {}),
-						...(signal ? { signal } : {}),
-					}),
-				);
-				if (!data) {
-					throw extractionError("DOWNLOAD_FAILED", "mux returned no data");
-				}
-				return data;
-			} catch (error) {
-				const typed = extractionErrorFrom(error);
-				throw typed.code === "UNKNOWN"
-					? extractionError("DOWNLOAD_FAILED", typed.message)
-					: typed;
-			}
 		}
+		case "mux":
+			return muxSource(source, signal);
 		case "fallback": {
 			let lastError: unknown = extractionError("NO_MEDIA", "no video sources");
 			for (const candidate of source.sources) {
@@ -239,8 +264,11 @@ const materializeFileSource = async (
 	return downloadSource(source, signal);
 };
 
+// A carousel is still worth sending without one of its items, so a failure
+// costs the item, not the post. The reason goes to the log.
 const materializeItem = async (
 	item: MediaItemPlan,
+	label: string,
 	signal?: AbortSignal,
 ): Promise<MediaItem | null> => {
 	try {
@@ -248,17 +276,19 @@ const materializeItem = async (
 			item.source.kind === "mux" || item.source.kind === "fallback"
 				? await materializeVideoSource(item.source, signal)
 				: await materializeFileSource(item.source, signal);
-		if (typeof data === "object" && !(data instanceof Blob)) return null;
+		if (typeof data === "object" && !(data instanceof Blob)) {
+			logger.warn(`[carousel] ${label} skipped: source needs Telegram fetch`);
+			return null;
+		}
 		return {
 			type: item.type,
 			data,
-			...(item.width !== undefined ? { width: item.width } : {}),
-			...(item.height !== undefined ? { height: item.height } : {}),
-			...(item.type === "video" && item.duration !== undefined
-				? { duration: item.duration }
-				: {}),
+			width: item.width,
+			height: item.height,
+			duration: item.type === "video" ? item.duration : undefined,
 		};
-	} catch {
+	} catch (error) {
+		logger.warn(`[carousel] ${label} skipped: ${messageOf(error)}`);
 		return null;
 	}
 };
@@ -271,12 +301,13 @@ const materializeAudio = async (
 	try {
 		return {
 			data: await materializeFileSource(plan.source, signal),
-			...(plan.duration !== undefined ? { duration: plan.duration } : {}),
-			...(plan.title ? { title: plan.title } : {}),
-			...(plan.performer ? { performer: plan.performer } : {}),
+			duration: plan.duration,
+			title: plan.title || undefined,
+			performer: plan.performer || undefined,
 		};
-	} catch {
+	} catch (error) {
 		// A carousel remains useful when its optional soundtrack is unavailable.
+		logger.warn(`[carousel] soundtrack skipped: ${messageOf(error)}`);
 		return undefined;
 	}
 };
@@ -291,28 +322,41 @@ const materializeCarousel = async (
 	signal?: AbortSignal,
 ): Promise<Flow<Media, ExtractionError>> => {
 	const maxBytes = plan.maxBytes ?? config.telegram.maxCarouselBytes;
+	const total = plan.items.length;
 	let totalBytes = 0;
 	const planned = plan.items.slice(0, config.telegram.maxCarouselItems);
 	const [materialized, audio] = await Promise.all([
-		mapConcurrent(planned, carouselConcurrency(planned), async (item) => {
-			const result = await materializeItem(item, signal);
-			if (!result) return null;
-			const bytes = result.data instanceof Blob ? result.data.size : 0;
-			if (totalBytes + bytes > maxBytes) return null;
-			totalBytes += bytes;
-			return result;
-		}),
+		mapConcurrent(
+			planned,
+			carouselConcurrency(planned),
+			async (item, index) => {
+				const label = `item ${index + 1}/${total}`;
+				const result = await materializeItem(item, label, signal);
+				if (!result) return null;
+				const bytes = result.data instanceof Blob ? result.data.size : 0;
+				if (totalBytes + bytes > maxBytes) {
+					logger.warn(`[carousel] ${label} skipped: over the size budget`);
+					return null;
+				}
+				totalBytes += bytes;
+				return result;
+			},
+		),
 		materializeAudio(plan.audio, signal),
 	]);
 	const items = materialized.filter((item): item is MediaItem => item !== null);
 	if (items.length === 0)
 		return F.fail(extractionError("NO_MEDIA", "no carousel items"));
+	if (items.length < total) {
+		logger.warn(`[carousel] kept ${items.length} of ${total} items`);
+	}
 
 	return F.of({
 		type: "carousel",
 		items,
-		...(plan.caption ? { caption: plan.caption } : {}),
-		...(audio ? { audio } : {}),
+		total: items.length < total ? total : undefined,
+		caption: plan.caption,
+		audio,
 	});
 };
 
@@ -330,26 +374,26 @@ export const materializeMedia = async (
 				return F.of({
 					type: "video",
 					data: await materializeVideoSource(plan.source, signal),
-					...(plan.width !== undefined ? { width: plan.width } : {}),
-					...(plan.height !== undefined ? { height: plan.height } : {}),
-					...(plan.duration !== undefined ? { duration: plan.duration } : {}),
-					...(plan.caption ? { caption: plan.caption } : {}),
+					width: plan.width,
+					height: plan.height,
+					duration: plan.duration,
+					caption: plan.caption,
 				});
 			case "photo":
 				return F.of({
 					type: "photo",
 					data: await materializeFileSource(plan.source, signal),
-					...(plan.width !== undefined ? { width: plan.width } : {}),
-					...(plan.height !== undefined ? { height: plan.height } : {}),
-					...(plan.caption ? { caption: plan.caption } : {}),
+					width: plan.width,
+					height: plan.height,
+					caption: plan.caption,
 				});
 			case "audio":
 				return F.of({
 					type: "audio",
 					data: await materializeFileSource(plan.source, signal),
-					...(plan.duration !== undefined ? { duration: plan.duration } : {}),
-					...(plan.title ? { title: plan.title } : {}),
-					...(plan.performer ? { performer: plan.performer } : {}),
+					duration: plan.duration,
+					title: plan.title || undefined,
+					performer: plan.performer || undefined,
 				});
 		}
 	} catch (error) {

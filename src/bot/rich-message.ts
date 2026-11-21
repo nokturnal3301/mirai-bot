@@ -19,8 +19,12 @@ export type RichMedia = {
 	supports_streaming?: boolean;
 };
 
-// The link the author label points to: the post the user sent.
-export type Card = Caption & { link?: string };
+// `link` is where the author label points: the post the user sent. `partial`
+// is set when the card holds fewer items than the post.
+export type Card = Caption & {
+	link?: string;
+	partial?: { shown: number; total: number };
+};
 
 type RichMessageResult = {
 	rich_message?: {
@@ -176,6 +180,9 @@ const footer = (card: Card, media: RichMedia[]): string => {
 		statsLine(card),
 		card.music?.trim()
 			? `${emoji(CARD_ICONS.music)} ${escapeHtml(clip(card.music.trim()))}`
+			: "",
+		card.partial
+			? `${card.partial.shown} of ${card.partial.total} items shown`
 			: "",
 	].filter(Boolean);
 	return lines.length ? `<footer>${lines.join("<br>")}</footer>` : "";

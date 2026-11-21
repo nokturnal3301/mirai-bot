@@ -186,7 +186,23 @@ describe("media plans", () => {
 					{ type: "photo", data: first },
 					{ type: "photo", data: second },
 				],
+				total: 3,
 			},
 		});
+	});
+
+	test("reports the full item count only when the carousel is incomplete", async () => {
+		const result = await materializeMedia({
+			type: "carousel",
+			items: [
+				{ type: "photo", source: { kind: "ready", data: new Blob(["a"]) } },
+				{ type: "photo", source: { kind: "ready", data: new Blob(["b"]) } },
+			],
+		});
+
+		expect(result._tag).toBe("Continue");
+		if (result._tag === "Continue" && result.value.type === "carousel") {
+			expect(result.value.total).toBeUndefined();
+		}
 	});
 });

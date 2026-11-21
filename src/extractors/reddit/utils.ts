@@ -1,5 +1,5 @@
 import { HEADERS } from "extractors/reddit/constants";
-import { extractionError, http, logger } from "lib";
+import { cookiePairs, extractionError, http, logger } from "lib";
 
 const POST_PATTERN = /reddit\.com\/(?:r\/[\w]+\/)?comments\/([\w]+)/;
 const SHORT_PATTERN = /redd\.it\/([\w]+)/;
@@ -16,13 +16,6 @@ type CookieJar = { cookies: string; expiresAt: number };
 
 let jar: CookieJar | null = null;
 let pending: Promise<string> | null = null;
-
-const collectCookies = (response: { headers: Headers }): string[] => {
-	const set = response.headers.getSetCookie?.() ?? [];
-	return set
-		.map((c) => c.split(";")[0]?.trim())
-		.filter((c): c is string => !!c);
-};
 
 const dedupCookies = (raw: string[]): string => {
 	const seen = new Map<string, string>();
@@ -53,7 +46,7 @@ const solveChallenge = async (): Promise<string> => {
 		);
 	}
 
-	const cookies1 = collectCookies(r1);
+	const cookies1 = cookiePairs(r1.headers);
 	const url = `${CHALLENGE_TARGET}?solution=${challenge}${challenge}&js_challenge=1&jsc_token=${token}&jsc_orig_r=`;
 
 	const r2 = await http(url, {
@@ -62,7 +55,7 @@ const solveChallenge = async (): Promise<string> => {
 		proxy: true,
 	});
 
-	const cookies2 = collectCookies(r2);
+	const cookies2 = cookiePairs(r2.headers);
 	const combined = dedupCookies([...cookies1, ...cookies2]);
 
 	logger.info(
@@ -119,7 +112,7 @@ export const refreshRedditSession = async (postUrl: string): Promise<void> => {
 	const refreshed = dedupCookies([
 		...cookies.split(/;\s*/),
 		"over18=1",
-		...collectCookies(response),
+		...cookiePairs(response.headers),
 	]);
 	jar = { cookies: refreshed, expiresAt: Date.now() + COOKIE_TTL_MS };
 	await response.body?.cancel();

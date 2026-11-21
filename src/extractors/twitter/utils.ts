@@ -51,15 +51,10 @@ export const tweetCaption = (tweet: SyndicationTweet): Caption => {
 		},
 		postedAt: unixSeconds(tweet.created_at),
 		// A reply to yourself is a thread, not a conversation.
-		...(replyTo && replyTo !== author ? { replyTo } : {}),
-		...(quoteText
-			? {
-					quote: {
-						author: tweet.quoted_tweet?.user?.screen_name,
-						text: quoteText,
-					},
-				}
-			: {}),
-		...(tweet.possibly_sensitive ? { sensitive: true } : {}),
+		replyTo: replyTo && replyTo !== author ? replyTo : undefined,
+		quote: quoteText
+			? { author: tweet.quoted_tweet?.user?.screen_name, text: quoteText }
+			: undefined,
+		sensitive: tweet.possibly_sensitive || undefined,
 	};
 };

@@ -58,11 +58,10 @@ export const matchesHttpUrl = (
 	return matchesDomain && path.test(parsed.pathname);
 };
 
-export const findUrl = (text: string): string | null => {
-	const match = text.match(/https?:\/\/[^\s]+/);
-	if (!match?.[0]) return null;
-	return match[0].replace(/[),.!?;:'"»\]]+$/, "");
-};
+export const findUrls = (text: string): string[] =>
+	Array.from(text.matchAll(/https?:\/\/[^\s]+/g), ([url]) =>
+		url.replace(/[),.!?;:'"»\]]+$/, ""),
+	);
 
 export const isPublicHttpUrl = (value: string): boolean => {
 	const parsed = parseHttpUrl(value);

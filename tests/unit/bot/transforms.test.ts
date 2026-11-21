@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, test, expect, spyOn } from "bun:test";
 import * as rich from "bot/rich-message";
 import {
 	checkFileSize,
-	detectUrl,
+	detectLinks,
 	extract,
 	matchExtractor,
 	replyError,
@@ -25,28 +25,33 @@ const mockCtx = (text: string) =>
 		from: { id: 456, username: "testuser" },
 	}) as unknown as MessageContext;
 
-describe("detectUrl", () => {
-	test("returns Continue with URL when found", () => {
-		const ctx = mockCtx("Check this https://example.com/video out!");
-		const result = detectUrl({ ctx });
+describe("detectLinks", () => {
+	test("returns Continue with every link in the text", () => {
+		const ctx = mockCtx(
+			"Check this https://example.com/video and https://example.org/b out!",
+		);
+		const result = detectLinks({ ctx });
 
 		expect(result._tag).toBe("Continue");
 		if (result._tag === "Continue") {
-			expect(result.value.url).toBe("https://example.com/video");
+			expect(result.value.links).toEqual([
+				"https://example.com/video",
+				"https://example.org/b",
+			]);
 			expect(result.value.ctx).toBe(ctx);
 		}
 	});
 
 	test("returns Stop when no URL found", () => {
 		const ctx = mockCtx("Just some text without links");
-		const result = detectUrl({ ctx });
+		const result = detectLinks({ ctx });
 
 		expect(result._tag).toBe("Stop");
 	});
 
 	test("returns Stop for empty text", () => {
 		const ctx = mockCtx("");
-		const result = detectUrl({ ctx });
+		const result = detectLinks({ ctx });
 
 		expect(result._tag).toBe("Stop");
 	});
@@ -57,7 +62,7 @@ describe("matchExtractor", () => {
 		const ctx = mockCtx("");
 		const result = matchExtractor({
 			ctx,
-			url: "https://instagram.com/p/ABC123",
+			links: ["https://instagram.com/p/ABC123"],
 		});
 
 		expect(result._tag).toBe("Continue");
@@ -71,7 +76,7 @@ describe("matchExtractor", () => {
 		const ctx = mockCtx("");
 		const result = matchExtractor({
 			ctx,
-			url: "https://youtube.com/shorts/ABC123",
+			links: ["https://youtube.com/shorts/ABC123"],
 		});
 
 		expect(result._tag).toBe("Continue");
@@ -82,7 +87,10 @@ describe("matchExtractor", () => {
 
 	test("returns Continue with extractor for TikTok URL", () => {
 		const ctx = mockCtx("");
-		const result = matchExtractor({ ctx, url: "https://vm.tiktok.com/ABC123" });
+		const result = matchExtractor({
+			ctx,
+			links: ["https://vm.tiktok.com/ABC123"],
+		});
 
 		expect(result._tag).toBe("Continue");
 		if (result._tag === "Continue") {
@@ -94,7 +102,7 @@ describe("matchExtractor", () => {
 		const ctx = mockCtx("");
 		const result = matchExtractor({
 			ctx,
-			url: "https://facebook.com/user/posts/123",
+			links: ["https://facebook.com/user/posts/123"],
 		});
 
 		expect(result._tag).toBe("Stop");
@@ -206,6 +214,22 @@ describe("replyError", () => {
 			);
 			expect(media).toEqual([]);
 			expect(params).toEqual({ reply_parameters: { message_id: 77 } });
+		} finally {
+			richSpy.mockRestore();
+		}
+	});
+
+	test("only logs when the error card itself cannot be sent", async () => {
+		const richSpy = spyOn(rich, "sendRichMessage").mockRejectedValue(
+			new Error("Forbidden: bot was blocked by the user"),
+		);
+		try {
+			const result = await replyError(
+				replyTo("https://www.instagram.com/p/ABC/"),
+			)("UNKNOWN");
+
+			expect(result._tag).toBe("Stop");
+			expect(richSpy).toHaveBeenCalledTimes(1);
 		} finally {
 			richSpy.mockRestore();
 		}
@@ -487,6 +511,24 @@ describe("sendMedia", () => {
 		expect(calls.some((c) => c.method === "sendAudio")).toBe(false);
 	});
 
+	test("tells the reader when a carousel lost some of its items", async () => {
+		const { sendMedia } = await import("bot/transforms");
+		const { ctx, calls } = makeCtx();
+		const media = {
+			type: "carousel" as const,
+			items: [
+				{ type: "photo" as const, data: "https://cdn/1.jpg" },
+				{ type: "photo" as const, data: "https://cdn/2.jpg" },
+			],
+			total: 5,
+		};
+
+		await sendMedia({ ctx, url: "https://example.com/partial", media });
+
+		const card = calls.find((c) => c.method === "sendRichMessage");
+		expect(card?.args[0]).toContain("2 of 5 items shown");
+	});
+
 	test("sends a one-item carousel directly, then sends its audio", async () => {
 		const { sendMedia } = await import("bot/transforms");
 		const { ctx, calls } = makeCtx();
@@ -765,13 +807,70 @@ describe("sendMedia", () => {
 		await Bun.sleep(5);
 		releaseLeader?.();
 
-		const [firstResult, secondResult] = await Promise.allSettled([
-			first,
-			second,
-		]);
-		expect(firstResult.status).toBe("rejected");
-		expect(secondResult.status).toBe("fulfilled");
+		const [firstResult, secondResult] = await Promise.all([first, second]);
+		expect(firstResult._tag).toBe("Stop");
+		expect(secondResult._tag).toBe("Continue");
 		expect(followerUploads).toBe(1);
+	});
+
+	test("reports a send Telegram rejected instead of failing silently", async () => {
+		const { sendMedia } = await import("bot/transforms");
+		const { ctx } = makeCtx();
+		richSpy.mockImplementation(async () => {
+			throw new Error("Bad Request: PHOTO_INVALID_DIMENSIONS");
+		});
+
+		const result = await sendMedia({
+			ctx,
+			url: "https://example.com/rejected-photo",
+			media: { type: "photo", data: new Blob(["x"]) },
+		});
+
+		expect(result).toEqual({ _tag: "Fail", error: "UNKNOWN" });
+	});
+
+	test("downloads the post again when Telegram no longer has the cached file", async () => {
+		const { sendMedia } = await import("bot/transforms");
+		const { tiktok } = await import("extractors/tiktok/extractor");
+		const { ctx } = makeCtx();
+		const fresh = new Blob(["fresh"]);
+		const extractSpy = spyOn(tiktok, "extract").mockResolvedValue(
+			F.of({ type: "video", data: fresh }),
+		);
+		const inputs: unknown[] = [];
+		richSpy.mockImplementation(async (_ctx, _html, media = []) => {
+			const input = media[0]?.media;
+			inputs.push(input);
+			if (input === "gone-file-id") {
+				throw new Error(
+					"Bad Request: wrong file identifier/HTTP URL specified",
+				);
+			}
+			return {
+				rich_message: {
+					blocks: [{ type: "video", video: { file_id: "new-file-id" } }],
+				},
+			};
+		});
+
+		try {
+			const result = await sendMedia({
+				ctx,
+				url: "https://www.tiktok.com/@user/video/7710083543078194452",
+				media: {
+					type: "video",
+					data: { kind: "telegram", fileId: "gone-file-id" },
+				},
+			});
+
+			expect(result._tag).toBe("Continue");
+			expect(extractSpy).toHaveBeenCalledTimes(1);
+			expect(inputs).toHaveLength(2);
+			expect(inputs[0]).toBe("gone-file-id");
+			expect(inputs[1]).toBe(fresh);
+		} finally {
+			extractSpy.mockRestore();
+		}
 	});
 });
 

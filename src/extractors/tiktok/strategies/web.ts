@@ -1,46 +1,34 @@
 import type { Flow } from "lib/flow";
 import type { ExtractionError, StrategyContext } from "lib";
 import type { MediaPlan } from "extractors/media";
-import { F, chain, defineStrategy, http, logger } from "lib";
-import { HEADERS } from "extractors/tiktok/constants";
+import { F, chain, defineStrategy, logger } from "lib";
 import {
 	buildTikTokMediaPlan,
+	fetchTikTokPage,
 	parseTikTokItem,
 	resolveTikTokTarget,
+	type TikTokPage,
 	type TikTokStrategyInput,
 } from "extractors/tiktok/utils";
-
-type PageData = { cookies: string; html: string };
 
 const fetchPage = async (
 	pageUrl: string,
 	signal: AbortSignal,
-): Promise<Flow<PageData, ExtractionError>> => {
-	const response = await http(pageUrl, {
-		headers: {
-			...HEADERS,
-			Accept: "text/html",
-			"Accept-Language": "en-US,en;q=0.9",
-		},
-		responseType: "textWithHeaders",
-		signal,
+): Promise<Flow<TikTokPage, ExtractionError>> => {
+	const page = await fetchTikTokPage(pageUrl, signal, {
+		"Accept-Language": "en-US,en;q=0.9",
 	});
-
-	const cookies = response.headers
-		.getSetCookie()
-		.map((cookie) => cookie.split(";")[0])
-		.join("; ");
-	if (!cookies.includes("tt_chain_token")) {
+	if (!page.cookies.includes("tt_chain_token")) {
 		logger.warn("[tiktok/web] no tt_chain_token in response");
 	}
 
-	return F.of({ cookies, html: response.body });
+	return F.of(page);
 };
 
 const buildMediaPlan = ({
 	cookies,
 	html,
-}: PageData): Flow<MediaPlan, ExtractionError> => {
+}: TikTokPage): Flow<MediaPlan, ExtractionError> => {
 	const item = parseTikTokItem(html);
 	return item._tag === "Continue"
 		? buildTikTokMediaPlan(item.value, cookies, "page")

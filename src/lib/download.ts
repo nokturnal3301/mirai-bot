@@ -37,20 +37,14 @@ export const download = async (
 			const result = await downloadInRanges(url, {
 				headers: httpOptions.headers,
 				connections,
-				...(expectedBytes !== undefined ? { expectedBytes } : {}),
+				expectedBytes,
 				maxBytes: config.telegram.maxFileSize,
 				label,
-				...(minBytesPerSecond !== undefined ? { minBytesPerSecond } : {}),
-				...(httpOptions.signal ? { signal: httpOptions.signal } : {}),
-				...(httpOptions.attempts !== undefined
-					? { attempts: httpOptions.attempts }
-					: {}),
-				...(httpOptions.timeout !== undefined
-					? { timeout: httpOptions.timeout }
-					: {}),
-				...(httpOptions.proxy !== undefined
-					? { proxy: httpOptions.proxy }
-					: {}),
+				minBytesPerSecond,
+				signal: httpOptions.signal ?? undefined,
+				attempts: httpOptions.attempts,
+				timeout: httpOptions.timeout,
+				proxy: httpOptions.proxy,
 			});
 			return new Blob([result.bytes.buffer as ArrayBuffer], {
 				type: result.contentType,

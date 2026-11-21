@@ -152,6 +152,15 @@ describe("rich messages", () => {
 		);
 	});
 
+	test("says how many items are shown when the carousel is incomplete", () => {
+		const media = [{ type: "photo" as const, media: "a" }];
+
+		expect(
+			renderCard({ author: "mirai", partial: { shown: 7, total: 12 } }, media),
+		).toContain("<footer>@mirai<br>7 of 12 items shown</footer>");
+		expect(renderCard({ author: "mirai" }, media)).not.toContain("items shown");
+	});
+
 	test("splits large carousels into even collages of at most ten", () => {
 		const collageSizes = (count: number) =>
 			renderCard(

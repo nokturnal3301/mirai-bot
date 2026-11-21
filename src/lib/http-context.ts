@@ -24,7 +24,7 @@ export const withStickyProxy = <T>(
 		{
 			forceProxy: true,
 			proxySession: randomBytes(6).toString("hex"),
-			...(options.country ? { proxyCountry: options.country } : {}),
+			proxyCountry: options.country || undefined,
 		},
 		fn,
 	);

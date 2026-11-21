@@ -300,6 +300,137 @@ describe("youtube", () => {
 			}
 		});
 
+		const PLAYER_URL =
+			"https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+		const VISIONOS = "101";
+		const WEB_EMBEDDED = "56";
+
+		// Answers the player API per client, the way YouTube words its refusals.
+		const mockRefusals = (
+			answers: Record<string, { status: string; reason: string }>,
+		) => {
+			const asked: string[] = [];
+			const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+				input,
+				init,
+			) => {
+				const url = String(input);
+				if (url === "https://www.youtube.com/") {
+					return new Response('"visitorData":"visitor-id"');
+				}
+				if (url !== PLAYER_URL) return Response.json({});
+
+				const client =
+					new Headers(init?.headers).get("x-youtube-client-name") ?? "";
+				asked.push(client);
+				return Response.json({ playabilityStatus: answers[client] });
+			}) as typeof fetch);
+			return { asked, fetchSpy };
+		};
+
+		test("reports an age-restricted video after a single round", async () => {
+			const { asked, fetchSpy } = mockRefusals({
+				[VISIONOS]: {
+					status: "LOGIN_REQUIRED",
+					reason: "Sign in to confirm your age",
+				},
+				[WEB_EMBEDDED]: {
+					status: "ERROR",
+					reason: "This video is unavailable",
+				},
+			});
+
+			try {
+				const result = await youtube.extract(
+					"https://youtube.com/shorts/ageGated001",
+				);
+
+				expect(result).toMatchObject({
+					_tag: "Fail",
+					error: { code: "AGE_RESTRICTED", retryable: false, terminal: true },
+				});
+				expect(asked).toEqual([VISIONOS, WEB_EMBEDDED]);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
+		test("gives up after a single round when every client says the video is gone", async () => {
+			const { asked, fetchSpy } = mockRefusals({
+				[VISIONOS]: { status: "ERROR", reason: "This video is unavailable" },
+				[WEB_EMBEDDED]: { status: "ERROR", reason: "Video unavailable" },
+			});
+
+			try {
+				const result = await youtube.extract(
+					"https://youtube.com/shorts/deletedVid1",
+				);
+
+				expect(result).toMatchObject({
+					_tag: "Fail",
+					error: { code: "NO_MEDIA", retryable: false, terminal: true },
+				});
+				expect(asked).toEqual([VISIONOS, WEB_EMBEDDED]);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
+		test("trusts a single client that names the removal", async () => {
+			const { asked, fetchSpy } = mockRefusals({
+				[VISIONOS]: {
+					status: "ERROR",
+					reason:
+						"This video has been removed for violating YouTube's Terms of Service",
+				},
+				[WEB_EMBEDDED]: {
+					status: "LOGIN_REQUIRED",
+					reason: "Sign in to confirm you’re not a bot",
+				},
+			});
+
+			try {
+				const result = await youtube.extract(
+					"https://youtube.com/shorts/removedVid1",
+				);
+
+				expect(result).toMatchObject({
+					_tag: "Fail",
+					error: { code: "NO_MEDIA", terminal: true },
+				});
+				expect(asked).toHaveLength(2);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
+		test("keeps rolling the route when a block hides behind a vague refusal", async () => {
+			const { asked, fetchSpy } = mockRefusals({
+				[VISIONOS]: {
+					status: "LOGIN_REQUIRED",
+					reason: "Sign in to confirm you’re not a bot",
+				},
+				[WEB_EMBEDDED]: {
+					status: "ERROR",
+					reason: "This video is unavailable",
+				},
+			});
+
+			try {
+				const result = await youtube.extract(
+					"https://youtube.com/shorts/blockedIp01",
+				);
+
+				expect(result).toMatchObject({
+					_tag: "Fail",
+					error: { code: "UPSTREAM_REJECTED", retryable: true },
+				});
+				expect(asked).toHaveLength(6);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
 		const mockShort = (
 			next: (signal?: AbortSignal | null) => Promise<Response>,
 		) => {

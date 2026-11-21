@@ -106,6 +106,37 @@ describe("ranged download", () => {
 		}
 	});
 
+	test("fails a range that sends more bytes than it announced", async () => {
+		const total = 600 * 1024;
+		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+			_input,
+			init,
+		) => {
+			const match = new Headers(init?.headers)
+				.get("range")
+				?.match(/^bytes=(\d+)-(\d+)$/);
+			const start = Number(match?.[1]);
+			const end = Number(match?.[2]);
+			return new Response(new Uint8Array(end - start + 2), {
+				status: 206,
+				headers: { "Content-Range": `bytes ${start}-${end}/${total}` },
+			});
+		}) as typeof fetch);
+
+		try {
+			await expect(
+				downloadInRanges(URL, {
+					connections: 2,
+					expectedBytes: total,
+					maxBytes: 1024 * 1024,
+					label: "long-range",
+				}),
+			).rejects.toThrow("longer than expected");
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
 	test("reuses a full response when the server ignores Range", async () => {
 		const source = new Uint8Array([1, 2, 3]);
 		const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(

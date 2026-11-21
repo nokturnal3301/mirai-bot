@@ -1,6 +1,5 @@
 import type { ExtractionError, Flow } from "lib";
 import type { Caption } from "extractors/types";
-import type { MediaItemPlan, MediaPlan } from "extractors/media";
 import type { MediaDetail } from "extractors/twitter/types";
 
 import { extractionError, F, chain, defineStrategy, http, logger } from "lib";
@@ -8,8 +7,13 @@ import { config } from "config";
 import {
 	DOWNLOAD_CONNECTIONS,
 	DOWNLOAD_MIN_BYTES_PER_SECOND,
-	HEADERS,
-} from "extractors/twitter/constants";
+} from "extractors/constants";
+import {
+	planOfItem,
+	type MediaItemPlan,
+	type MediaPlan,
+} from "extractors/media";
+import { HEADERS } from "extractors/twitter/constants";
 import { SyndicationResponseSchema } from "extractors/twitter/schemas";
 import {
 	extractTweetId,
@@ -114,7 +118,7 @@ const itemPlanOf = async (
 			attempts: 2,
 			connections: DOWNLOAD_CONNECTIONS,
 			minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
-			...(picked.size !== undefined ? { expectedBytes: picked.size } : {}),
+			expectedBytes: picked.size,
 		},
 		width,
 		height,
@@ -165,27 +169,9 @@ const buildPlan = async ({
 
 	if (details.length === 1) {
 		const item = await itemPlanOf(details[0] as MediaDetail);
-		if (!item) {
-			return F.fail(extractionError("NO_MEDIA", "no Twitter media URL"));
-		}
-
-		if (item.type === "video") {
-			return F.of({
-				type: "video",
-				source: item.source,
-				width: item.width,
-				height: item.height,
-				duration: item.duration,
-				caption,
-			});
-		}
-		return F.of({
-			type: "photo",
-			source: item.source,
-			width: item.width,
-			height: item.height,
-			caption,
-		});
+		return item
+			? F.of(planOfItem(item, caption))
+			: F.fail(extractionError("NO_MEDIA", "no Twitter media URL"));
 	}
 
 	const items = (await Promise.all(details.map(itemPlanOf))).filter(

@@ -22,14 +22,9 @@ export const postCaption = (post: ThreadsPost): Caption => {
 			comments: info?.direct_reply_count ?? undefined,
 		},
 		postedAt: post.taken_at ?? undefined,
-		...(quoteText
-			? {
-					quote: {
-						author: quoted?.user?.username ?? undefined,
-						text: quoteText,
-					},
-				}
-			: {}),
-		...(info?.is_spoiler_media ? { sensitive: true } : {}),
+		quote: quoteText
+			? { author: quoted?.user?.username ?? undefined, text: quoteText }
+			: undefined,
+		sensitive: info?.is_spoiler_media || undefined,
 	};
 };

@@ -1,11 +1,11 @@
 import type { TelegramUser } from "gramio";
 import type { MessageContext } from "bot/types";
 
-import { logger, trackTask } from "lib";
+import { logger, trackTask, withDownloadSlot, withRequestId } from "lib";
 import { F, chain } from "lib/flow";
 import {
 	logMessage,
-	detectUrl,
+	detectLinks,
 	matchExtractor,
 	checkRateLimit,
 	extract,
@@ -22,19 +22,24 @@ export const errorHandler = (kind: string, error: Error) => {
 	logger.error(`[${kind}]`, error.message);
 };
 
+const inRequest = <T>(run: () => Promise<T>): Promise<T> =>
+	withRequestId(() => withDownloadSlot(run));
+
 export const messageHandler = (ctx: MessageContext) =>
 	trackTask(async () => {
-		if (!ctx.text) return;
+		if (!ctx.text && !ctx.caption) return;
 		if (!ctx.from) return;
 
-		await chain(F.of({ ctx }))
-			.pipe(logMessage)
-			.pipe(detectUrl)
-			.pipe(matchExtractor)
-			.pipe(checkRateLimit)
-			.pipe(extract)
-			.pipe(checkFileSize)
-			.pipe(sendMedia)
-			.recover(replyError(ctx))
-			.run();
+		await inRequest(() =>
+			chain(F.of({ ctx }))
+				.pipe(logMessage)
+				.pipe(detectLinks)
+				.pipe(matchExtractor)
+				.pipe(checkRateLimit)
+				.pipe(extract)
+				.pipe(checkFileSize)
+				.pipe(sendMedia)
+				.recover(replyError(ctx))
+				.run(),
+		);
 	});

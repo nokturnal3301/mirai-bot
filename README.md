@@ -8,20 +8,21 @@ Send a supported link to the bot and it returns the media directly in Telegram.
 
 ## Supported platforms
 
-| Platform    | Accepted links                                                                   | Output                                                                    |
-| ----------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Instagram   | Reels and posts (`/reel`, `/reels`, `/p`, `/tv`)                                 | Videos, photos, mixed carousels                                           |
-| TikTok      | Video and photo posts, including `vm.tiktok.com` and `vt.tiktok.com` short links | Videos, photo slideshows, slideshow audio                                 |
-| YouTube     | `youtube.com/shorts/...`                                                         | Combined video or FFmpeg-muxed adaptive video and audio                   |
-| Threads     | Post links from `threads.com` and `threads.net`                                  | Videos, photos, carousels, text-only posts                                |
-| Twitter / X | Tweet status links from `twitter.com` and `x.com`                                | Videos, photos, animated GIFs, multi-photo posts, text-only tweets        |
-| Reddit      | Post, share, `redd.it`, `i.redd.it`, and `v.redd.it` links                       | Images, galleries, native videos with audio, text and external-link posts |
+| Platform    | Accepted links                                                                               | Output                                                                    |
+| ----------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Instagram   | Reels and posts (`/reel`, `/reels`, `/p`, `/tv`)                                             | Videos, photos, mixed carousels                                           |
+| TikTok      | Video and photo posts, plus `vm.tiktok.com`, `vt.tiktok.com` and `tiktok.com/t/` short links | Videos, photo slideshows, slideshow audio                                 |
+| YouTube     | `youtube.com/shorts/...`                                                                     | Combined video or FFmpeg-muxed adaptive video and audio                   |
+| Threads     | Post links from `threads.com` and `threads.net`                                              | Videos, photos, carousels, text-only posts                                |
+| Twitter / X | Tweet status links from `twitter.com` and `x.com`                                            | Videos, photos, animated GIFs, multi-photo posts, text-only tweets        |
+| Reddit      | Post, share, `redd.it`, `i.redd.it`, and `v.redd.it` links                                   | Images, galleries, native videos with audio, text and external-link posts |
 
 Only public content is supported. The bot caps each downloaded media file at
 50 MB; Telegram also applies its own per-method limits. Carousel extraction
 considers up to 20 items and retains up to 50 MB of downloaded photo/video data,
-skipping unavailable or over-budget items. Carousels are sent as native rich
-message collages, with up to 50 attachments per message.
+skipping unavailable or over-budget items; the card then says how many of the
+post's items it shows. Carousels are sent as native rich message collages, with
+up to 50 attachments per message.
 
 ## Highlights
 
@@ -43,7 +44,10 @@ message collages, with up to 50 attachments per message.
 - Single-flight coalescing for concurrent requests to the same post and reuse
   of the first successful video upload's Telegram `file_id` across chats.
 - Optional 30-day Redis cache of Telegram `file_id` values for instant repeat
-  delivery of individual videos, photos, and audio.
+  delivery of individual videos, photos, and audio, with the same card as the
+  first send.
+- A cap on how many requests hold freshly downloaded media at once, so a burst
+  of links queues instead of exhausting memory. Cached replies skip the queue.
 - Custom `Flow` result type for a typed, railway-oriented bot pipeline, plus a
   discriminated `Media` union with exhaustive dispatch.
 - Runtime response validation with Zod and focused Bun unit/integration tests.
@@ -87,8 +91,9 @@ the standard audio player.
 
 Errors reply to the link with a small card: an icon and a title, the reason
 in a quote, and "Open in Instagram" (or another platform) when the post itself
-is the problem. Age-restricted Instagram and TikTok posts get their own card,
-because those platforms show them only to signed-in users.
+is the problem. Age-restricted Instagram, TikTok and YouTube posts get their
+own card, because those platforms show them only to signed-in users. A reply
+that Telegram refuses to accept gets the generic card instead of silence.
 
 Logos, stat and error icons come from the bot's own adaptive custom emoji set,
 [Mirai Icons](https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot), which
@@ -97,9 +102,11 @@ set. IDs live in `src/bot/constants.ts`; no pack installation or runtime lookup
 is needed. Telegram requires a Premium bot owner for custom emoji in
 private/group chats, or an additional username purchased on Fragment.
 
-Use a current Telegram client to view rich messages. These cards are forwardable;
-they do not use protected HTML widgets. `src/bot/rich-message.ts` renders the
-card and sends it through GramIO, which uploads the nested media.
+Rich messages need a recent version of the Telegram app; older versions may not
+show these cards. The cards can be forwarded like ordinary messages.
+
+`src/bot/rich-message.ts` builds the card's HTML and sends it with GramIO's
+`sendRichMessage`, which also uploads the attached media.
 
 ## Quick start
 
@@ -165,6 +172,13 @@ Container logs are lost on every redeploy, so the bot also keeps the last
 docker compose exec redis redis-cli LRANGE mirai:failures 0 49
 ```
 
+Requests run side by side and their log lines interleave, so every line written
+while handling a message starts with that request's number:
+
+```bash
+docker compose --profile prod logs bot | grep '#42 '
+```
+
 ## Quality checks
 
 ```bash
@@ -190,13 +204,16 @@ the commit-tagged image to the configured VPS.
 
 ## Request pipeline
 
-1. Find the first HTTP(S) URL in an incoming Telegram message.
-2. Match it against the extractor registry and apply the per-user rate limit.
-3. Return a cached Telegram `file_id` when Redis has a matching entry.
-4. Run the platform's sequential or hedged strategy plan and materialize the
-   selected media. Concurrent requests for the same normalized URL share this
-   work. YouTube includes downloading in each strategy, so a failed combined
-   download can fall back to adaptive streams.
+1. Collect the HTTP(S) links of an incoming Telegram message: its text or its
+   media caption, including links hidden behind text.
+2. Take the first link an extractor accepts and apply the per-user rate limit.
+3. Return a cached Telegram `file_id` when Redis has a matching entry. If
+   Telegram no longer has that file, drop the entry and download the post again.
+4. Otherwise wait for a download slot, then run the platform's sequential or
+   hedged strategy plan and materialize the selected media. Concurrent requests
+   for the same normalized URL share this work. YouTube includes downloading in
+   each strategy, so a failed combined download can fall back to adaptive
+   streams.
 5. For a retryable extraction failure, make up to two additional attempts with
    fresh sticky proxy sessions when `PROXY_URL` is configured. YouTube also has
    its own route retries; some CDN downloads explicitly try a direct connection
@@ -204,7 +221,8 @@ the commit-tagged image to the configured VPS.
 6. Enforce download size limits and deadlines. Terminal errors stop the
    extraction strategy runner and whole-extractor proxy retries.
 7. Send a rich card with embedded media and collapsed description, or a standard
-   audio message. Read returned rich media blocks to cache their `file_id`.
+   audio message. Read returned rich media blocks to cache their `file_id`. A
+   send that Telegram rejects is answered with an error card.
 
 The rate limiter currently allows five supported-link requests per user per
 minute. Unsupported links and messages without URLs are ignored.
@@ -222,6 +240,11 @@ minute. Unsupported links and messages without URLs are ignored.
   speed; an explicit download timeout overrides that budget.
 - FFmpeg jobs are limited to two concurrent operations, with a 120-second
   deadline covering queueing, input downloads, and muxing.
+- At most four requests hold freshly downloaded media at once
+  (`downloads.maxConcurrent`); the rest wait their turn. A request keeps its
+  slot until the reply is sent, because the file stays in memory until then.
+- A file downloaded in parallel ranges is written straight into one buffer, so
+  it is held in memory once.
 
 Limits are configured in `src/config/app.ts` and the relevant download helpers.
 
@@ -268,6 +291,14 @@ PO token is available. The iOS client uses a native BotGuard implementation:
 Both strategies share the first player response within a route attempt. Up to
 three route attempts are made for retryable failures, each with a fresh sticky
 proxy session when a proxy is configured. Downloads stay inside that session.
+
+Some refusals are final, and another address would not change them. A client
+that names the reason (an age restriction, a removal, a private video) is
+believed on its own. The vague "video unavailable" counts only when every
+client of the cascade says it, because a client also says it about videos it
+merely refuses to play. A final refusal skips the remaining route attempts and
+proxy reruns, and an age restriction gets its own error card. Any other answer
+is treated as a block and retried.
 
 The token minter, visitor session, and player responses are cached in memory;
 player responses are keyed by route. No YouTube account or cookies are required,

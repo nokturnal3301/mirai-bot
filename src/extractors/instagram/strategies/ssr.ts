@@ -2,10 +2,8 @@ import type { MediaPlan } from "extractors/media";
 import type { InstagramMedia } from "extractors/instagram/schemas";
 import type { ExtractionError, Flow, StrategyContext } from "lib";
 
-import {
-	CRAWLER_HEADERS,
-	SCRIPT_PATTERN,
-} from "extractors/instagram/constants";
+import { SJS_SCRIPT_PATTERN } from "extractors/constants";
+import { CRAWLER_HEADERS } from "extractors/instagram/constants";
 import {
 	buildInstagramMediaPlan,
 	extractShortcode,
@@ -24,7 +22,7 @@ const fetchPost = async (
 		signal,
 	});
 
-	for (const match of html.matchAll(SCRIPT_PATTERN)) {
+	for (const match of html.matchAll(SJS_SCRIPT_PATTERN)) {
 		const raw = match[1];
 		if (!raw || !raw.includes(shortcode)) continue;
 		try {

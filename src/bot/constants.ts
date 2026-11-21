@@ -1,17 +1,19 @@
+import type { Platform } from "extractors/types";
+
 export const MESSAGES = {
 	WELCOME: `Hey there! I'm Mirai, the media downloader. Send me a link from Instagram, TikTok, YouTube, Threads, Twitter/X, or Reddit — I'll grab the content for you!`,
-	HELP: `Need a hand? No problem!
-	Just paste a link from:
-	• Instagram (reels, posts, carousels)
-	• TikTok (videos, photo slideshows)
-	• YouTube (shorts)
-	• Threads (posts, photos, carousels)
-	• Twitter / X (tweets, photos, videos)
-	• Reddit (images, galleries, native videos)
-	I'll do my best to get that for you!`,
+	HELP: [
+		"Need a hand? No problem!",
+		"Just paste a link from:",
+		"• Instagram (reels, posts, carousels)",
+		"• TikTok (videos, photo slideshows)",
+		"• YouTube (shorts)",
+		"• Threads (posts, photos, carousels)",
+		"• Twitter / X (tweets, photos, videos)",
+		"• Reddit (images, galleries, native videos)",
+		"I'll do my best to get that for you!",
+	].join("\n"),
 } as const;
-
-import type { Platform } from "extractors/types";
 
 // Our adaptive set https://t.me/addemoji/mirai_icons_by_mirai_downloader_bot:
 // clients repaint the icons in the text color and Telegram takes the fallback

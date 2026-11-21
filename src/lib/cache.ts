@@ -1,7 +1,38 @@
 import { RedisClient } from "bun";
 import { z } from "zod";
 import { env } from "config";
+import type { Caption } from "extractors/types";
 import { logger } from "./logger";
+
+// Every Caption field is listed, so a repeat send from the cache shows the same
+// card as the first one. A new Caption field fails to compile until added here.
+const CaptionSchema = z.object({
+	source: z
+		.enum(["instagram", "youtube", "tiktok", "threads", "twitter", "reddit"])
+		.optional(),
+	author: z.string().optional(),
+	name: z.string().optional(),
+	verified: z.boolean().optional(),
+	text: z.string().optional(),
+	title: z.string().optional(),
+	flair: z.string().optional(),
+	community: z.string().optional(),
+	stats: z
+		.object({
+			views: z.number().optional(),
+			likes: z.number().optional(),
+			comments: z.number().optional(),
+			score: z.number().optional(),
+		})
+		.optional(),
+	postedAt: z.number().optional(),
+	music: z.string().optional(),
+	replyTo: z.string().optional(),
+	quote: z
+		.object({ author: z.string().optional(), text: z.string() })
+		.optional(),
+	sensitive: z.boolean().optional(),
+} satisfies Record<keyof Caption, z.ZodType>);
 
 const CachedMediaSchema = z.object({
 	fileId: z.string().min(1),
@@ -11,22 +42,8 @@ const CachedMediaSchema = z.object({
 	duration: z.number().finite().nonnegative().optional(),
 	title: z.string().optional(),
 	performer: z.string().optional(),
-	caption: z
-		.object({
-			author: z.string().optional(),
-			text: z.string().optional(),
-			source: z
-				.enum([
-					"instagram",
-					"youtube",
-					"tiktok",
-					"threads",
-					"twitter",
-					"reddit",
-				])
-				.optional(),
-		})
-		.optional(),
+	// A malformed caption costs the card its text, not the cached file.
+	caption: CaptionSchema.optional().catch(undefined),
 });
 
 export type CachedMedia = z.infer<typeof CachedMediaSchema>;
@@ -91,6 +108,14 @@ const cacheOperation = async <T>(operation: Promise<T>): Promise<T> => {
 	}
 };
 
+export const parseCachedMedia = (raw: string): CachedMedia | null => {
+	try {
+		return CachedMediaSchema.safeParse(JSON.parse(raw)).data ?? null;
+	} catch {
+		return null;
+	}
+};
+
 const tripCircuit = (): void => {
 	bypassUntil = Date.now() + CIRCUIT_BREAK_MS;
 };
@@ -104,8 +129,8 @@ export const getCachedMedia = async (
 	try {
 		const raw = await cacheOperation(client.get(key));
 		if (!raw) return null;
-		const parsed = CachedMediaSchema.safeParse(JSON.parse(raw));
-		if (parsed.success) return parsed.data;
+		const cached = parseCachedMedia(raw);
+		if (cached) return cached;
 
 		logger.warn(`[cache] discarded invalid entry ${normalizeUrl(url)}`);
 		await cacheOperation(client.del(key));

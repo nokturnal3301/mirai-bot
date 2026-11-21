@@ -1,6 +1,11 @@
 import { config } from "config";
 import { responseTooLargeFailure } from "./errors";
-import { http, readResponseBytes } from "./http";
+import {
+	http,
+	readResponseBytes,
+	readResponseInto,
+	rejectOversized,
+} from "./http";
 import { logger } from "./logger";
 
 export type RangedDownloadOptions = Readonly<{
@@ -59,7 +64,7 @@ const probeSource = async (
 		responseType: "raw",
 		attempts: options.attempts ?? 1,
 		timeout: options.timeout ?? config.http.timeout,
-		...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+		proxy: options.proxy,
 		signal,
 	});
 	const contentType = response.headers.get("content-type") ?? "";
@@ -161,15 +166,15 @@ export const downloadInRanges = async (
 				responseType: "raw",
 				attempts: options.attempts ?? 1,
 				timeout: options.timeout ?? config.http.timeout,
-				...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+				proxy: options.proxy,
 				signal: controller.signal,
 			});
-			const bytes = await readResponseBytes(
-				response,
-				options.maxBytes,
-				options.onBytes,
-			);
-			if (bytes.length !== probe.total) {
+			// The size came from the platform; the server may still send the whole
+			// of a larger file.
+			await rejectOversized(response, options.maxBytes);
+			const bytes = new Uint8Array(probe.total);
+			const written = await readResponseInto(response, bytes, options.onBytes);
+			if (written !== probe.total) {
 				throw new Error(`unexpected size for ${options.label}`);
 			}
 			logger.info(
@@ -181,20 +186,21 @@ export const downloadInRanges = async (
 			};
 		}
 
+		// Every range lands in its own slice of the final buffer, so the file is
+		// held once instead of once as parts and once assembled.
+		const bytes = new Uint8Array(probe.total);
 		const chunkSize = Math.ceil(probe.total / connections);
 		const requests = Array.from({ length: connections }, async (_, index) => {
 			const start = index * chunkSize;
 			const end = Math.min(start + chunkSize - 1, probe.total - 1);
-			if (start > end) {
-				return { bytes: new Uint8Array(), contentType: "" };
-			}
+			if (start > end) return "";
 
 			const response = await http(url, {
 				headers: withRange(options.headers, `bytes=${start}-${end}`),
 				responseType: "raw",
 				attempts: options.attempts ?? 1,
 				timeout: options.timeout ?? config.http.timeout,
-				...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+				proxy: options.proxy,
 				signal: controller.signal,
 			});
 			if (response.status !== 206) {
@@ -215,32 +221,24 @@ export const downloadInRanges = async (
 				throw new Error(`invalid content-range for ${options.label}`);
 			}
 
-			const part = await readResponseBytes(response, expected, options.onBytes);
-			if (part.length !== expected) {
+			const written = await readResponseInto(
+				response,
+				bytes.subarray(start, end + 1),
+				options.onBytes,
+			);
+			if (written !== expected) {
 				throw new Error(`short range for ${options.label}`);
 			}
-			return {
-				bytes: part,
-				contentType: response.headers.get("content-type") ?? "",
-			};
+			return response.headers.get("content-type") ?? "";
 		});
-		const parts = await settleRanges(requests, controller);
+		const contentTypes = await settleRanges(requests, controller);
 
-		const bytes = new Uint8Array(probe.total);
-		let offset = 0;
-		for (const part of parts) {
-			bytes.set(part.bytes, offset);
-			offset += part.bytes.length;
-		}
 		logger.info(
 			`[download] ${options.label}: ${sizeOf(bytes)} in ${elapsedSince(startedAt)} (${connections}x)`,
 		);
 		return {
 			bytes,
-			contentType:
-				probe.contentType ||
-				parts.find((part) => part.contentType)?.contentType ||
-				"",
+			contentType: probe.contentType || contentTypes.find(Boolean) || "",
 		};
 	} catch (error) {
 		if (!controller.signal.aborted) controller.abort(error);

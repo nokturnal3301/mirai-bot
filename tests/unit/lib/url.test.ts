@@ -1,35 +1,33 @@
 import { describe, test, expect } from "bun:test";
-import { findUrl, isPublicHttpUrl, matchesHttpUrl } from "lib/url";
+import { findUrls, isPublicHttpUrl, matchesHttpUrl } from "lib/url";
 
-describe("findUrl", () => {
-	test("extracts https URL from text", () => {
+describe("findUrls", () => {
+	test("extracts an https URL from text", () => {
 		const text = "Check this out https://instagram.com/p/abc123 amazing!";
-		expect(findUrl(text)).toBe("https://instagram.com/p/abc123");
+		expect(findUrls(text)).toEqual(["https://instagram.com/p/abc123"]);
 	});
 
-	test("extracts http URL from text", () => {
-		const text = "Link: http://example.com/page";
-		expect(findUrl(text)).toBe("http://example.com/page");
+	test("extracts an http URL from text", () => {
+		expect(findUrls("Link: http://example.com/page")).toEqual([
+			"http://example.com/page",
+		]);
 	});
 
-	test("returns first URL when multiple present", () => {
-		const text = "https://first.com and https://second.com";
-		expect(findUrl(text)).toBe("https://first.com");
+	test("returns every URL in the order they appear", () => {
+		expect(findUrls("https://first.com and https://second.com")).toEqual([
+			"https://first.com",
+			"https://second.com",
+		]);
 	});
 
-	test("returns null when no URL present", () => {
-		const text = "No links here";
-		expect(findUrl(text)).toBeNull();
+	test("returns nothing when no URL is present", () => {
+		expect(findUrls("No links here")).toEqual([]);
 	});
 
-	test("handles URL at start of text", () => {
-		const text = "https://youtube.com/watch?v=abc text after";
-		expect(findUrl(text)).toBe("https://youtube.com/watch?v=abc");
-	});
-
-	test("handles URL at end of text", () => {
-		const text = "Watch this https://youtu.be/abc123";
-		expect(findUrl(text)).toBe("https://youtu.be/abc123");
+	test("keeps the query string and drops trailing punctuation", () => {
+		expect(findUrls("See (https://youtube.com/watch?v=abc), ok?")).toEqual([
+			"https://youtube.com/watch?v=abc",
+		]);
 	});
 });
 

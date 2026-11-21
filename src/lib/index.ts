@@ -1,4 +1,4 @@
-export { http } from "./http";
+export { cookiePairs, http } from "./http";
 export { download, type DownloadOptions } from "./download";
 export {
 	extractionError,
@@ -14,17 +14,21 @@ export {
 	type ExtractionErrorCode,
 	type ResponseTooLargeFailure,
 } from "./errors";
-export { withCpuAdmission } from "./admission";
+export {
+	takeDownloadSlot,
+	withCpuAdmission,
+	withDownloadSlot,
+} from "./admission";
 export {
 	withHttpContext,
 	withStickyProxy,
 	getHttpContext,
 } from "./http-context";
-export { logger } from "./logger";
+export { logger, withRequestId } from "./logger";
 export { F, chain, type Chain, type Flow } from "./flow";
 export {
 	decodeHtmlEntities,
-	findUrl,
+	findUrls,
 	isPublicHttpUrl,
 	assertPublicHttpUrl,
 	matchesHttpUrl,
@@ -71,6 +75,7 @@ export {
 	deleteCachedMedia,
 	closeCache,
 	normalizeUrl,
+	parseCachedMedia,
 	recordFailure,
 	type CachedMedia,
 	type Failure,

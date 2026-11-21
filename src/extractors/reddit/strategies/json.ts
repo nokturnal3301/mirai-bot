@@ -119,16 +119,16 @@ export const captionOf = (
 	const flair = cleanText(post.link_flair_text);
 	const hasStats = post.score !== undefined || post.num_comments !== undefined;
 	return {
-		...(author ? { author } : {}),
-		...(text ? { text } : {}),
-		...(title ? { title } : {}),
-		...(flair ? { flair } : {}),
-		...(post.subreddit ? { community: post.subreddit } : {}),
-		...(hasStats
-			? { stats: { score: post.score, comments: post.num_comments } }
-			: {}),
-		...(post.created_utc ? { postedAt: Math.floor(post.created_utc) } : {}),
-		...(post.over_18 || post.spoiler ? { sensitive: true } : {}),
+		author: author || undefined,
+		text,
+		title,
+		flair,
+		community: post.subreddit || undefined,
+		stats: hasStats
+			? { score: post.score, comments: post.num_comments }
+			: undefined,
+		postedAt: post.created_utc ? Math.floor(post.created_utc) : undefined,
+		sensitive: post.over_18 || post.spoiler || undefined,
 	};
 };
 

@@ -1,44 +1,25 @@
 import type { ExtractionError, Flow } from "lib";
-import type { MediaItemPlan, MediaPlan } from "extractors/media";
 import type { ThreadsPost } from "extractors/threads/types";
 
+import { extractionError, F, chain, defineStrategy, http, logger } from "lib";
+import { DOWNLOAD_CONNECTIONS, SJS_SCRIPT_PATTERN } from "extractors/constants";
 import {
-	extractionError,
-	F,
-	chain,
-	defineStrategy,
-	getHttpContext,
-	http,
-	logger,
-} from "lib";
-import {
-	DOWNLOAD_CONNECTIONS,
-	DOWNLOAD_MIN_BYTES_PER_SECOND,
-	HEADERS,
-	SCRIPT_PATTERN,
-} from "extractors/threads/constants";
+	directThenProxy,
+	planOfItem,
+	type MediaItemPlan,
+	type MediaPlan,
+} from "extractors/media";
+import { findDeep } from "extractors/utils";
+import { HEADERS } from "extractors/threads/constants";
 import { ThreadsPostSchema } from "extractors/threads/schemas";
 import { extractPostCode, postCaption } from "extractors/threads/utils";
 
-const findPostInJson = (
-	value: unknown,
-	postCode: string,
-): ThreadsPost | null => {
-	if (value === null || typeof value !== "object") return null;
-
-	if ("code" in value && (value as { code?: unknown }).code === postCode) {
-		const parsed = ThreadsPostSchema.safeParse(value);
-		if (parsed.success) return parsed.data;
-	}
-
-	for (const child of Object.values(value as Record<string, unknown>)) {
-		if (typeof child === "object" && child !== null) {
-			const found = findPostInJson(child, postCode);
-			if (found) return found;
-		}
-	}
-	return null;
-};
+const findPostInJson = (value: unknown, postCode: string): ThreadsPost | null =>
+	findDeep(value, (node) =>
+		"code" in node && node.code === postCode
+			? (ThreadsPostSchema.safeParse(node).data ?? null)
+			: null,
+	);
 
 // Share links redirect straight to the post page, so one request follows them
 // instead of resolving the code first and loading /t/<code>, which redirects too.
@@ -59,7 +40,7 @@ const fetchPost = async (
 	}
 	const html = page.body;
 
-	for (const match of html.matchAll(SCRIPT_PATTERN)) {
+	for (const match of html.matchAll(SJS_SCRIPT_PATTERN)) {
 		const raw = match[1];
 		if (!raw || !raw.includes(`"code":"${postCode}"`)) continue;
 
@@ -84,29 +65,17 @@ const itemPlanOf = (
 	const height = source.original_height ?? undefined;
 
 	if (videoUrl) {
-		// Threads CDN URLs are not IP-bound. Metadata may require a residential
-		// proxy, but sending the media bytes through it is slower and less reliable.
-		const directContext = { forceProxy: false };
-		const proxyContext = getHttpContext() ?? { forceProxy: true };
-		const download = {
-			kind: "download" as const,
-			url: videoUrl,
-			headers: HEADERS,
-			attempts: 2,
-			connections: DOWNLOAD_CONNECTIONS,
-		};
 		return {
 			type: "video",
 			source: {
 				kind: "fallback",
-				sources: [
-					{
-						...download,
-						minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
-						httpContext: directContext,
-					},
-					{ ...download, httpContext: proxyContext },
-				],
+				sources: directThenProxy({
+					kind: "download",
+					url: videoUrl,
+					headers: HEADERS,
+					attempts: 2,
+					connections: DOWNLOAD_CONNECTIONS,
+				}),
 			},
 			width,
 			height,
@@ -171,24 +140,9 @@ const buildPlan = (post: ThreadsPost): Flow<MediaPlan, ExtractionError> => {
 		? Math.round(source.video_duration)
 		: undefined;
 
-	if (item.type === "video") {
-		return F.of({
-			type: "video",
-			source: item.source,
-			width: item.width,
-			height: item.height,
-			duration,
-			caption,
-		});
-	}
-
-	return F.of({
-		type: "photo",
-		source: item.source,
-		width: item.width,
-		height: item.height,
-		caption,
-	});
+	return F.of(
+		planOfItem(item.type === "video" ? { ...item, duration } : item, caption),
+	);
 };
 
 export const ssr = defineStrategy(

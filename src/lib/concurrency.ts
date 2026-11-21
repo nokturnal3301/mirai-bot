@@ -21,6 +21,8 @@ export const mapConcurrent = async <T, R>(
 };
 
 export type Semaphore = {
+	// Resolves with a release function; calling it twice frees the permit once.
+	acquire: (signal?: AbortSignal) => Promise<() => void>;
 	withPermit: <T>(run: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
 };
 
@@ -40,7 +42,7 @@ export const createSemaphore = (concurrency: number): Semaphore => {
 			? signal.reason
 			: new Error(String(signal.reason ?? "semaphore wait aborted"));
 
-	const acquire = async (signal?: AbortSignal): Promise<void> => {
+	const enter = async (signal?: AbortSignal): Promise<void> => {
 		if (signal?.aborted) throw abortError(signal);
 		if (active < limit) {
 			active++;
@@ -59,7 +61,7 @@ export const createSemaphore = (concurrency: number): Semaphore => {
 		});
 	};
 
-	const release = (): void => {
+	const leave = (): void => {
 		const next = waiting.shift();
 		if (!next) {
 			active--;
@@ -71,12 +73,23 @@ export const createSemaphore = (concurrency: number): Semaphore => {
 		next.resolve();
 	};
 
+	const acquire = async (signal?: AbortSignal): Promise<() => void> => {
+		await enter(signal);
+		let held = true;
+		return () => {
+			if (!held) return;
+			held = false;
+			leave();
+		};
+	};
+
 	return {
+		acquire,
 		withPermit: async <T>(
 			run: () => Promise<T>,
 			signal?: AbortSignal,
 		): Promise<T> => {
-			await acquire(signal);
+			const release = await acquire(signal);
 			try {
 				return await run();
 			} finally {

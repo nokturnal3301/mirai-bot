@@ -8,6 +8,7 @@ describe("extractor registry", () => {
 			{ url: "https://youtube.com/shorts/ABC123", platform: "youtube" },
 			{ url: "https://tiktok.com/@user/video/123", platform: "tiktok" },
 			{ url: "https://vm.tiktok.com/ABC123", platform: "tiktok" },
+			{ url: "https://www.tiktok.com/t/ZTRabc123/", platform: "tiktok" },
 			{
 				url: "https://www.threads.com/@user/post/ABC123",
 				platform: "threads",

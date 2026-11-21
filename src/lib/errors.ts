@@ -95,7 +95,7 @@ export const extractionError = (
 	message,
 	retryable: options.retryable ?? DEFAULTS[code].retryable,
 	terminal: options.terminal ?? DEFAULTS[code].terminal,
-	...(options.details ? { details: options.details } : {}),
+	details: options.details,
 });
 
 export const isExtractionError = (error: unknown): error is ExtractionError =>

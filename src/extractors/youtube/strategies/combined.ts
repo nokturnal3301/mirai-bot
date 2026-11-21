@@ -11,7 +11,7 @@ import { extractionError, F, chain, defineStrategy } from "lib";
 import {
 	DOWNLOAD_CONNECTIONS,
 	DOWNLOAD_MIN_BYTES_PER_SECOND,
-} from "extractors/youtube/constants";
+} from "extractors/constants";
 import {
 	captionOf,
 	estimatedBytesOf,
@@ -79,7 +79,7 @@ const buildPlan = (
 			url: format.url,
 			headers: { "User-Agent": userAgent },
 			connections: DOWNLOAD_CONNECTIONS,
-			...(Number.isFinite(size) ? { expectedBytes: size } : {}),
+			expectedBytes: Number.isFinite(size) ? size : undefined,
 			minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
 		},
 		width: format.width,

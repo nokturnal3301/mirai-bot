@@ -11,7 +11,7 @@ export const tiktok: Extractor = {
 		matchesHttpUrl(
 			url,
 			["tiktok.com"],
-			/^\/(?:@[^/]+\/(?:video|photo)\/\d+|[\w-]+\/?$)/,
+			/^\/(?:@[^/]+\/(?:video|photo)\/\d+|t\/[\w-]+|[\w-]+\/?$)/,
 		),
 	extract: (url) =>
 		execute({

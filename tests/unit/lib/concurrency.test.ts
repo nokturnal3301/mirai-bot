@@ -28,6 +28,27 @@ describe("concurrency", () => {
 		expect(await next).toBe("ok");
 	});
 
+	test("hands out a release that frees the permit only once", async () => {
+		const semaphore = createSemaphore(1);
+		const release = await semaphore.acquire();
+		const order: string[] = [];
+		const second = semaphore.withPermit(async () => {
+			order.push("second");
+			await Bun.sleep(2);
+		});
+		const third = semaphore.withPermit(async () => {
+			order.push("third");
+		});
+
+		release();
+		release();
+		await Bun.sleep(0);
+
+		expect(order).toEqual(["second"]);
+		await Promise.all([second, third]);
+		expect(order).toEqual(["second", "third"]);
+	});
+
 	test("removes an aborted waiter without consuming a permit", async () => {
 		const semaphore = createSemaphore(1);
 		let markStarted: () => void = () => {};

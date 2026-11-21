@@ -3,9 +3,11 @@ import type { StrategyContext } from "lib";
 import type { Caption, Media } from "extractors/types";
 import type {
 	Client,
+	ClientAnswer,
 	InnertubeFormat,
 	InnertubeResponse,
 	InnertubeResult,
+	Refusal,
 	Session,
 	TokenMinter,
 } from "extractors/youtube/types";
@@ -28,11 +30,12 @@ import {
 	type ExtractionError,
 } from "lib";
 import { isPublicHttpUrl } from "lib/url";
+import { CHROME_UA } from "extractors/constants";
 import {
+	AGE_GATE_PATTERN,
 	ATTESTATION_API_URL,
 	ATTESTATION_HEADERS,
 	BOTGUARD_REQUEST_KEY,
-	CHROME_UA,
 	CLIENTS,
 	ENGAGEMENT_GRACE_MS,
 	ENGAGEMENT_TIMEOUT_MS,
@@ -42,9 +45,11 @@ import {
 	NEXT_ENDPOINT,
 	PLAYER_ENDPOINT,
 	PLAYER_RESPONSE_TTL_MS,
+	REMOVED_PATTERN,
 	REQUEST_TIMEOUT_MS,
 	SESSION_TTL_MS,
 	TRUSTED_BOTGUARD_HOSTS,
+	UNAVAILABLE_PATTERN,
 	VIDEO_ID_PATTERNS,
 	YOUTUBE_HOME_URL,
 } from "extractors/youtube/constants";
@@ -71,7 +76,7 @@ export const captionOf = (data: InnertubeResponse): Caption => {
 	return {
 		name: details?.author,
 		text: text || undefined,
-		...(Number.isFinite(views) ? { stats: { views } } : {}),
+		stats: Number.isFinite(views) ? { views } : undefined,
 	};
 };
 
@@ -532,18 +537,19 @@ const buildPlayerRequest = (
 	session: Session,
 	poToken: string | null,
 ): { body: string; headers: Record<string, string> } => {
+	// JSON drops the fields left undefined.
 	const body = JSON.stringify({
 		videoId,
 		context: {
 			client: {
 				...client.client,
-				...(session.visitorData ? { visitorData: session.visitorData } : {}),
+				visitorData: session.visitorData || undefined,
 			},
-			...(client.embedUrl ? { thirdParty: { embedUrl: client.embedUrl } } : {}),
+			thirdParty: client.embedUrl ? { embedUrl: client.embedUrl } : undefined,
 		},
 		contentCheckOk: true,
 		racyCheckOk: true,
-		...(poToken ? { serviceIntegrityDimensions: { poToken } } : {}),
+		serviceIntegrityDimensions: poToken ? { poToken } : undefined,
 	});
 
 	const headers: Record<string, string> = {
@@ -561,15 +567,25 @@ const buildPlayerRequest = (
 	return { body, headers };
 };
 
+const UNDECIDED: ClientAnswer = { refusal: null };
+
+const refusalOf = (status: string, reason: string): Refusal | null => {
+	if (AGE_GATE_PATTERN.test(reason)) return "age-restricted";
+	if (REMOVED_PATTERN.test(reason)) return "removed";
+	return status === "ERROR" && UNAVAILABLE_PATTERN.test(reason)
+		? "unavailable"
+		: null;
+};
+
 const tryClient = async (
 	videoId: string,
 	client: Client,
 	session: Session,
 	poToken: string | null,
-): Promise<InnertubeResult | null> => {
+): Promise<ClientAnswer> => {
 	if (client.poToken === "player" && !poToken) {
 		logger.info(`[youtube/${client.name}] skipping: needs PO token`);
-		return null;
+		return UNDECIDED;
 	}
 
 	const { body, headers } = buildPlayerRequest(
@@ -591,7 +607,7 @@ const tryClient = async (
 		const parsed = InnertubeResponseSchema.safeParse(raw);
 		if (!parsed.success) {
 			logger.warn(`[youtube/${client.name}] schema: ${parsed.error.message}`);
-			return null;
+			return UNDECIDED;
 		}
 
 		const data: InnertubeResponse = parsed.data;
@@ -608,12 +624,14 @@ const tryClient = async (
 			`[youtube/${client.name}] ${status} ${reason} (f=${formats}, a=${adaptive}, direct=${direct})`,
 		);
 
-		if (status !== "OK") return null;
-		if (direct === 0) return null;
+		if (status !== "OK") return { refusal: refusalOf(status, reason) };
+		if (direct === 0) return UNDECIDED;
 
 		return {
-			data,
-			client: { name: client.name, userAgent: client.userAgent },
+			playable: {
+				data,
+				client: { name: client.name, userAgent: client.userAgent },
+			},
 		};
 	} catch (error) {
 		logger.warn(`[youtube/${client.name}] error: ${errorMessage(error)}`);
@@ -625,38 +643,70 @@ const tryClient = async (
 		) {
 			throw error;
 		}
-		return null;
+		return UNDECIDED;
 	}
+};
+
+// Rolling to another address is pointless once YouTube itself says the video
+// is gone or age-gated, so those answers end the extraction.
+const cascadeFailure = (
+	refusals: readonly (Refusal | null)[],
+	fullCascade: boolean,
+): ExtractionError => {
+	if (refusals.includes("age-restricted")) {
+		return extractionError(
+			"AGE_RESTRICTED",
+			"YouTube shows this video only to signed-in adults",
+		);
+	}
+
+	const unanimous =
+		fullCascade &&
+		refusals.length > 1 &&
+		refusals.every((refusal) => refusal !== null);
+	if (refusals.includes("removed") || unanimous) {
+		return extractionError("NO_MEDIA", "YouTube video is private or removed", {
+			retryable: false,
+			terminal: true,
+		});
+	}
+
+	return extractionError("UPSTREAM_REJECTED", "all YouTube clients blocked");
 };
 
 const runPlayerCascade = async (
 	videoId: string,
 	skip: Set<string>,
-): Promise<InnertubeResult | null> => {
+): Promise<Flow<InnertubeResult, ExtractionError>> => {
 	const session = await fetchSession();
+	const clients = CLIENTS.filter((client) => !skip.has(client.name));
+	const refusals: (Refusal | null)[] = [];
 
-	for (const client of CLIENTS) {
-		if (skip.has(client.name) || client.poToken !== "none") continue;
-		const result = await tryClient(videoId, client, session, null);
-		if (result) return result;
+	for (const client of clients.filter(({ poToken }) => poToken === "none")) {
+		const answer = await tryClient(videoId, client, session, null);
+		if ("playable" in answer) return F.of(answer.playable);
+		refusals.push(answer.refusal);
 	}
 
 	const poToken = await getPoToken(videoId);
-	if (!poToken) return null;
-
-	for (const client of CLIENTS) {
-		if (skip.has(client.name) || client.poToken !== "player") continue;
-		const result = await tryClient(videoId, client, session, poToken);
-		if (result) return result;
+	const tokenClients = poToken
+		? clients.filter((client) => client.poToken === "player")
+		: [];
+	for (const client of tokenClients) {
+		const answer = await tryClient(videoId, client, session, poToken);
+		if ("playable" in answer) return F.of(answer.playable);
+		refusals.push(answer.refusal);
 	}
-	return null;
+
+	return F.fail(cascadeFailure(refusals, skip.size === 0));
 };
 
 const playerCache = new Map<
 	string,
 	{ result: InnertubeResult; fetchedAt: number }
 >();
-const inflight = new Map<string, Promise<InnertubeResult | null>>();
+const playerFlight =
+	createSingleFlight<Flow<InnertubeResult, ExtractionError>>();
 const MAX_PLAYER_CACHE_ENTRIES = 256;
 
 const cacheKey = (videoId: string, skip: string[]): string =>
@@ -676,28 +726,18 @@ export const fetchVideoData = async (
 	}
 	if (cached) playerCache.delete(key);
 
-	let pending = inflight.get(key);
-	if (!pending) {
-		pending = runPlayerCascade(videoId, new Set(skipClients)).finally(() => {
-			inflight.delete(key);
-		});
-		inflight.set(key, pending);
-	}
+	const result = await playerFlight(key, () =>
+		runPlayerCascade(videoId, new Set(skipClients)),
+	);
+	if (result._tag !== "Continue") return result;
 
-	const result = await pending;
-	if (!result) {
-		return F.fail(
-			extractionError("UPSTREAM_REJECTED", "all YouTube clients blocked"),
-		);
-	}
-
-	playerCache.set(key, { result, fetchedAt: Date.now() });
+	playerCache.set(key, { result: result.value, fetchedAt: Date.now() });
 	while (playerCache.size > MAX_PLAYER_CACHE_ENTRIES) {
 		const oldest = playerCache.keys().next().value;
 		if (oldest === undefined) break;
 		playerCache.delete(oldest);
 	}
-	return F.of(result);
+	return result;
 };
 
 const playerResponseFact = strategyFact<Flow<InnertubeResult, ExtractionError>>(

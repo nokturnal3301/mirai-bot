@@ -1,38 +1,66 @@
-import type { Caption, Media, Platform } from "extractors/types";
+import type { Caption, Extractor, Media, Platform } from "extractors/types";
 import { config, env } from "config";
 import {
 	getCachedMedia,
 	createSingleFlight,
+	deleteCachedMedia,
 	isResponseTooLargeFailure,
 	logger,
-	findUrl,
+	findUrls,
 	createRateLimiter,
 	normalizeUrl,
 	recordFailure,
+	takeDownloadSlot,
 	withStickyProxy,
 	type CachedMedia,
 	type ExtractionError,
 } from "lib";
-import { type Flow, F } from "lib/flow";
+import { type Flow, F, chain } from "lib/flow";
 import { findExtractor } from "extractors/registry";
 import { type ErrorCode, ERRORS } from "bot/constants";
 import type {
 	Ctx,
 	MessageContext,
-	WithUrl,
+	WithLinks,
 	WithExtractor,
 	WithMedia,
 } from "bot/types";
 import { renderErrorCard, sendRichMessage } from "bot/rich-message";
-import { isRemoteMediaResource, sendTelegramMedia } from "bot/telegram";
+import {
+	bestEffortTelegram,
+	isChatUnreachable,
+	isInvalidFileId,
+	isRemoteMediaResource,
+	isTelegramFile,
+	messageOf,
+	sendTelegramMedia,
+} from "bot/telegram";
 
 const rateLimiter = createRateLimiter(config.rateLimit);
 const extractSingle = createSingleFlight<Flow<Media, ExtractionError>>();
 const requestStartedAt = new WeakMap<MessageContext, number>();
 const PROXY_ATTEMPTS = 2;
+// A shorter wait for a download slot is not worth a log line.
+const QUEUE_LOG_THRESHOLD_MS = 250;
+
+type SupportedLink = { url: string; extractor: Extractor };
 
 const elapsedMs = (startedAt: number): string =>
 	`${(performance.now() - startedAt).toFixed(0)}ms`;
+
+// Visible links first, then links hidden behind text. A forwarded photo or
+// video carries its links in the caption.
+const linksOf = (ctx: MessageContext): string[] => [
+	...findUrls(ctx.text ?? ctx.caption ?? ""),
+	...(ctx.entities ?? ctx.captionEntities ?? []).flatMap(({ type, url }) =>
+		type === "text_link" && url ? [url] : [],
+	),
+];
+
+const supportedLink = (links: readonly string[]): SupportedLink | undefined =>
+	links
+		.map((url) => ({ url, extractor: findExtractor(url) }))
+		.find((link): link is SupportedLink => link.extractor !== undefined);
 
 const noteFailure = (url: string, code: string, message: string): void =>
 	void recordFailure({
@@ -45,23 +73,29 @@ const noteFailure = (url: string, code: string, message: string): void =>
 export const logMessage = ({ ctx }: Ctx): Flow<Ctx> => {
 	requestStartedAt.set(ctx, performance.now());
 	logger.info(
-		`[message] update=${ctx.updateId ?? "?"} message=${ctx.id} chat=${ctx.chat.type} text=${ctx.text?.length ?? 0}chars`,
+		`[message] update=${ctx.updateId ?? "?"} message=${ctx.id} chat=${ctx.chat.type} text=${(ctx.text ?? ctx.caption)?.length ?? 0}chars`,
 	);
 
 	return F.of({ ctx });
 };
 
-export const detectUrl = ({ ctx }: Ctx): Flow<WithUrl> => {
-	const url = findUrl(ctx.text ?? "");
-	return url ? F.of({ ctx, url }) : F.stop();
+export const detectLinks = ({ ctx }: Ctx): Flow<WithLinks> => {
+	const links = linksOf(ctx);
+	return links.length > 0 ? F.of({ ctx, links }) : F.stop();
 };
 
-export const matchExtractor = ({ ctx, url }: WithUrl): Flow<WithExtractor> => {
-	const extractor = findExtractor(url);
-	if (!extractor) return F.stop();
+// The first link a platform extractor accepts wins; the rest are ignored.
+export const matchExtractor = ({
+	ctx,
+	links,
+}: WithLinks): Flow<WithExtractor> => {
+	const link = supportedLink(links);
+	if (!link) return F.stop();
 
-	logger.info(`[${extractor.platform}] processing ${normalizeUrl(url)}`);
-	return F.of({ ctx, url, extractor });
+	logger.info(
+		`[${link.extractor.platform}] processing ${normalizeUrl(link.url)}`,
+	);
+	return F.of({ ctx, ...link });
 };
 
 export const checkRateLimit = ({
@@ -79,21 +113,20 @@ export const checkRateLimit = ({
 	return F.of({ ctx, url, extractor });
 };
 
-export const extract = async ({
+const extractFresh = async ({
 	ctx,
 	url,
 	extractor,
 }: WithExtractor): Promise<Flow<WithMedia>> => {
-	const startedAt = performance.now();
-	const cached = await getCachedMedia(url);
-
-	if (cached) {
-		logger.info(`[cache] hit ${normalizeUrl(url)} in ${elapsedMs(startedAt)}`);
-		const media = withSource(mediaFromCache(cached), extractor.platform);
-		return F.of({ ctx, url, media });
-	}
-
 	const result = await extractSingle(normalizeUrl(url), async () => {
+		const queuedMs = await takeDownloadSlot();
+		if (queuedMs > QUEUE_LOG_THRESHOLD_MS) {
+			logger.info(
+				`[queue] waited ${queuedMs.toFixed(0)}ms for a download slot`,
+			);
+		}
+
+		const startedAt = performance.now();
 		let extracted = await extractor.extract(url);
 		let route = "direct";
 
@@ -141,6 +174,19 @@ export const extract = async ({
 	return F.fail("EXTRACTION_FAILED" satisfies ErrorCode);
 };
 
+export const extract = async (
+	state: WithExtractor,
+): Promise<Flow<WithMedia>> => {
+	const { ctx, url, extractor } = state;
+	const startedAt = performance.now();
+	const cached = await getCachedMedia(url);
+	if (!cached) return extractFresh(state);
+
+	logger.info(`[cache] hit ${normalizeUrl(url)} in ${elapsedMs(startedAt)}`);
+	const media = withSource(mediaFromCache(cached), extractor.platform);
+	return F.of({ ctx, url, media });
+};
+
 const withSource = (media: Media, source: Platform): Media => {
 	if (media.type === "audio") return media;
 	if (media.type === "text") {
@@ -151,8 +197,8 @@ const withSource = (media: Media, source: Platform): Media => {
 };
 
 const mediaFromCache = (cached: CachedMedia): Media => {
-	const { fileId: data, width, height, duration, title, performer } = cached;
-	const caption = cached.caption as Caption | undefined;
+	const { fileId, width, height, duration, title, performer, caption } = cached;
+	const data = { kind: "telegram" as const, fileId };
 	switch (cached.type) {
 		case "photo":
 			return { type: "photo", data, width, height, caption };
@@ -206,6 +252,25 @@ export const checkFileSize = ({
 	return F.of({ ctx, url, media });
 };
 
+const isStaleCachedFile = (media: Media, error: unknown): boolean =>
+	"data" in media && isTelegramFile(media.data) && isInvalidFileId(error);
+
+// Telegram no longer has the cached file: forget it and download the post again.
+const resend = async ({
+	ctx,
+	url,
+}: Ctx<{ url: string }>): Promise<Flow<Ctx>> => {
+	logger.warn(`[cache] stale file for ${normalizeUrl(url)}, downloading again`);
+	await deleteCachedMedia(url);
+	const extractor = findExtractor(url);
+	if (!extractor) return F.fail("UNKNOWN" satisfies ErrorCode);
+
+	return chain(extractFresh({ ctx, url, extractor }))
+		.pipe(checkFileSize)
+		.pipe(sendMedia)
+		.run();
+};
+
 export const sendMedia = async ({
 	ctx,
 	url,
@@ -216,7 +281,9 @@ export const sendMedia = async ({
 	try {
 		await sendTelegramMedia(ctx, url, media);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		if (isStaleCachedFile(media, error)) return resend({ ctx, url });
+
+		const message = messageOf(error);
 		logger.error(
 			`[send] ${media.type} failed in ${elapsedMs(startedAt)}: ${message}`,
 		);
@@ -228,7 +295,9 @@ export const sendMedia = async ({
 			return F.fail("FILE_TOO_LARGE" satisfies ErrorCode);
 		}
 		noteFailure(url, "SEND_FAILED", message);
-		throw error;
+		return isChatUnreachable(error)
+			? F.stop()
+			: F.fail("UNKNOWN" satisfies ErrorCode);
 	}
 	logger.info(`[send] ${media.type} complete in ${elapsedMs(startedAt)}`);
 	logger.info(
@@ -237,16 +306,22 @@ export const sendMedia = async ({
 	return F.of({ ctx });
 };
 
+// The card is the last thing a failed request can do, so a card that fails to
+// send is only logged.
 export const replyError =
 	(ctx: MessageContext) =>
 	async (error: string): Promise<Flow<Ctx>> => {
 		const code = Object.hasOwn(ERRORS, error)
 			? (error as ErrorCode)
 			: "UNKNOWN";
-		const url = findUrl(ctx.text ?? "") ?? undefined;
-		const source = url ? findExtractor(url)?.platform : undefined;
-		await sendRichMessage(ctx, renderErrorCard(code, source, url), [], {
-			reply_parameters: { message_id: ctx.id },
-		});
+		const link = supportedLink(linksOf(ctx));
+		await bestEffortTelegram("error card", () =>
+			sendRichMessage(
+				ctx,
+				renderErrorCard(code, link?.extractor.platform, link?.url),
+				[],
+				{ reply_parameters: { message_id: ctx.id } },
+			),
+		);
 		return F.stop();
 	};

@@ -1,7 +1,10 @@
-import type { Media, RemoteMediaResource } from "extractors/types";
+import type {
+	Media,
+	RemoteMediaResource,
+	TelegramFile,
+} from "extractors/types";
 import {
 	createSingleFlight,
-	deleteCachedMedia,
 	download,
 	getCachedMedia,
 	logger,
@@ -18,7 +21,7 @@ import {
 	sendRichMessage,
 } from "bot/rich-message";
 
-const messageOf = (error: unknown): string =>
+export const messageOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
 export const bestEffortTelegram = async (
@@ -49,6 +52,15 @@ export const isRemoteMediaResource = (
 	"kind" in value &&
 	value.kind === "remote";
 
+export const isTelegramFile = (value: unknown): value is TelegramFile =>
+	typeof value === "object" &&
+	value !== null &&
+	"kind" in value &&
+	value.kind === "telegram";
+
+const inputOf = (data: Blob | string | TelegramFile): TelegramMediaInput =>
+	isTelegramFile(data) ? data.fileId : data;
+
 const elapsedMs = (startedAt: number): string =>
 	`${(performance.now() - startedAt).toFixed(0)}ms`;
 
@@ -60,13 +72,19 @@ const isRemoteFetchRejection = (error: unknown): boolean =>
 		messageOf(error),
 	);
 
-const isInvalidFileId = (error: unknown): boolean =>
+export const isInvalidFileId = (error: unknown): boolean =>
 	/(?:wrong file identifier|file reference .*expired|invalid file[_ ]?id)/i.test(
 		messageOf(error),
 	);
 
+// Nobody is left in the chat to read an error card.
+export const isChatUnreachable = (error: unknown): boolean =>
+	/(?:bot was blocked by the user|user is deactivated|chat not found|bot was kicked|bot is not a member)/i.test(
+		messageOf(error),
+	);
+
 export const deliverMedia = async <T>(
-	resource: Blob | string | RemoteMediaResource,
+	resource: Blob | string | RemoteMediaResource | TelegramFile,
 	send: (input: TelegramMediaInput) => Promise<T>,
 	fetchRemote: typeof download = download,
 ): Promise<DeliveryResult<T>> => {
@@ -79,10 +97,11 @@ export const deliverMedia = async <T>(
 	}
 
 	if (typeof resource === "string") {
-		return {
-			value: await send(resource),
-			route: /^https?:\/\//i.test(resource) ? "remote-url" : "file-id",
-		};
+		return { value: await send(resource), route: "remote-url" };
+	}
+
+	if (isTelegramFile(resource)) {
+		return { value: await send(resource.fileId), route: "file-id" };
 	}
 
 	if (resource.telegramFetch !== false) {
@@ -105,9 +124,7 @@ export const deliverMedia = async <T>(
 	const fetch = () =>
 		fetchRemote(resource.url, {
 			headers: resource.headers,
-			...(resource.connections !== undefined
-				? { connections: resource.connections }
-				: {}),
+			connections: resource.connections,
 			label: "telegram-media",
 		});
 	const blob = resource.httpContext
@@ -124,11 +141,11 @@ export const deliverMedia = async <T>(
 };
 
 const toAudioFile = (
-	data: Blob | string,
+	data: Blob | string | TelegramFile,
 	title?: string,
 	performer?: string,
 ): Blob | string => {
-	if (typeof data === "string") return data;
+	if (!(data instanceof Blob)) return inputOf(data);
 	const filename = [performer, title].filter(Boolean).join(" - ") || "audio";
 	const ext = AUDIO_EXT[data.type] ?? "mp3";
 	return new File([data], `${filename}.${ext}`);
@@ -178,19 +195,11 @@ const sendVideo = async (
 			attachments,
 		);
 	};
-	const isFileId =
-		typeof media.data === "string" && !/^https?:\/\//i.test(media.data);
 	let route: DeliveryRoute;
 	let bytes = expectedBytes;
 
-	if (isFileId) {
-		try {
-			const delivered = await deliverMedia(media.data, send);
-			route = delivered.route;
-		} catch (error) {
-			if (isInvalidFileId(error)) await deleteCachedMedia(url);
-			throw error;
-		}
+	if (isTelegramFile(media.data)) {
+		route = (await deliverMedia(media.data, send)).route;
 	} else {
 		const owner = Symbol("video-send");
 		const coordinated = await videoSendSingle(normalizeUrl(url), async () => {
@@ -233,7 +242,10 @@ const sendVideo = async (
 			route = coordinated.route ?? "multipart";
 			bytes = coordinated.bytes;
 		} else if (coordinated.fileId) {
-			await deliverMedia(coordinated.fileId, send);
+			await deliverMedia(
+				{ kind: "telegram", fileId: coordinated.fileId },
+				send,
+			);
 			route = "file-id";
 			logger.info("[delivery] joined in-flight video send via file_id");
 		} else {
@@ -257,7 +269,7 @@ const sendPhoto = async (
 	);
 	logger.info(`[send] photo ${media.width ?? "?"}x${media.height ?? "?"}`);
 
-	const attachments = [{ type: "photo" as const, media: media.data }];
+	const attachments = [{ type: "photo" as const, media: inputOf(media.data) }];
 	const message = await sendRichMessage(
 		ctx,
 		renderCard({ ...media.caption, link: url }, attachments),
@@ -333,6 +345,9 @@ const sendCarousel = async (
 	);
 	logger.info(`[send] carousel ${media.items.length} items`);
 	if (media.items.length === 0) throw new Error("empty carousel");
+	const partial = media.total
+		? { shown: media.items.length, total: media.total }
+		: undefined;
 
 	for (
 		let offset = 0;
@@ -358,7 +373,7 @@ const sendCarousel = async (
 			ctx,
 			renderCard(
 				offset === 0
-					? { ...media.caption, link: url }
+					? { ...media.caption, link: url, partial }
 					: { sensitive: media.caption?.sensitive },
 				attachments,
 			),

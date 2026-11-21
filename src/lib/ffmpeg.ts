@@ -113,7 +113,7 @@ const muxWithPermit = async (
 			downloadInRanges(videoUrl, {
 				headers,
 				connections: CONNECTIONS_VIDEO,
-				...(videoBytes ? { expectedBytes: videoBytes } : {}),
+				expectedBytes: videoBytes,
 				maxBytes: config.telegram.maxFileSize,
 				label: "video",
 				signal: controller.signal,
@@ -122,7 +122,7 @@ const muxWithPermit = async (
 			downloadInRanges(audioUrl, {
 				headers,
 				connections: CONNECTIONS_AUDIO,
-				...(audioBytes ? { expectedBytes: audioBytes } : {}),
+				expectedBytes: audioBytes,
 				maxBytes: config.telegram.maxFileSize,
 				label: "audio",
 				signal: controller.signal,

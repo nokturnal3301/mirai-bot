@@ -111,7 +111,7 @@ export const defineStrategy = <Input, Output>(
 					typeof options.after === "number"
 						? Math.max(0, options.after)
 						: (options.after ?? 0),
-				...(options.when ? { when: options.when } : {}),
+				when: options.when,
 				...(options.circuitBreaker
 					? {
 							circuitBreaker: Object.freeze({

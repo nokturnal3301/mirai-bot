@@ -21,7 +21,10 @@ describe("telegram delivery", () => {
 	});
 
 	test("passes a Telegram file_id through without downloading", async () => {
-		const result = await deliverMedia("cached-file-id", async (input) => input);
+		const result = await deliverMedia(
+			{ kind: "telegram", fileId: "cached-file-id" },
+			async (input) => input,
+		);
 
 		expect(result).toEqual({
 			value: "cached-file-id",

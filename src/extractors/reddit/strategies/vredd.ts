@@ -10,11 +10,9 @@ import {
 	http,
 	logger,
 } from "lib";
-import {
-	DOWNLOAD_CONNECTIONS,
-	DOWNLOAD_MIN_BYTES_PER_SECOND,
-	HEADERS,
-} from "extractors/reddit/constants";
+import { DOWNLOAD_MIN_BYTES_PER_SECOND } from "extractors/constants";
+import { parseDash } from "extractors/utils";
+import { DOWNLOAD_CONNECTIONS, HEADERS } from "extractors/reddit/constants";
 import { extractVReddId } from "extractors/reddit/utils";
 
 type DashStreams = {
@@ -29,35 +27,12 @@ const parseManifest = (
 	videoId: string,
 	manifest: string,
 ): DashStreams | null => {
-	const videoSection = manifest.match(
-		/<AdaptationSet[^>]*contentType="video"[\s\S]*?<\/AdaptationSet>/,
-	);
-	if (!videoSection?.[0]) return null;
+	const { audioUrl: audio, videos } = parseDash(manifest);
+	const best = [...videos].sort((a, b) => b.bandwidth - a.bandwidth)[0];
+	if (!best) return null;
 
-	const reps = [
-		...videoSection[0].matchAll(
-			/<Representation[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"[^>]*\bbandwidth="(\d+)"[^>]*>[\s\S]*?<BaseURL>([^<]+)<\/BaseURL>/g,
-		),
-	].map((m) => ({
-		width: Number(m[1]),
-		height: Number(m[2]),
-		bandwidth: Number(m[3]),
-		baseUrl: m[4],
-	}));
-
-	if (reps.length === 0) return null;
-
-	const best = reps.sort((a, b) => b.bandwidth - a.bandwidth)[0];
-	if (!best?.baseUrl) return null;
-
-	const audioMatch = manifest.match(
-		/<AdaptationSet[^>]*contentType="audio"[\s\S]*?<BaseURL>([^<]+)<\/BaseURL>/,
-	);
-
-	const videoUrl = `https://v.redd.it/${videoId}/${best.baseUrl}`;
-	const audioUrl = audioMatch?.[1]
-		? `https://v.redd.it/${videoId}/${audioMatch[1]}`
-		: null;
+	const videoUrl = `https://v.redd.it/${videoId}/${best.url}`;
+	const audioUrl = audio ? `https://v.redd.it/${videoId}/${audio}` : null;
 
 	logger.info(
 		`[reddit/vredd] ${best.width}x${best.height} ${(best.bandwidth / 1000).toFixed(0)}kbps audio=${!!audioUrl}`,

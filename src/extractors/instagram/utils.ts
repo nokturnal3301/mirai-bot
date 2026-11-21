@@ -1,26 +1,25 @@
 import { config } from "config";
-import type {
-	AtomicVideoSource,
-	AudioPlan,
-	MediaItemPlan,
-	MediaPlan,
+import { DOWNLOAD_CONNECTIONS } from "extractors/constants";
+import {
+	directThenProxy,
+	planOfItem,
+	type AtomicVideoSource,
+	type AudioPlan,
+	type MediaItemPlan,
+	type MediaPlan,
 } from "extractors/media";
 import type { Caption } from "extractors/types";
+import { findDeep, parseDash } from "extractors/utils";
 import type {
 	InstagramGraphMedia,
 	InstagramMedia,
 } from "extractors/instagram/schemas";
 import { InstagramGraphMediaSchema, InstagramMediaSchema } from "./schemas";
-import {
-	CRAWLER_HEADERS,
-	DOWNLOAD_CONNECTIONS,
-	DOWNLOAD_MIN_BYTES_PER_SECOND,
-} from "./constants";
+import { CRAWLER_HEADERS } from "./constants";
 import {
 	decodeHtmlEntities,
 	extractionError,
 	F,
-	getHttpContext,
 	logger,
 	type ExtractionError,
 	type Flow,
@@ -59,56 +58,30 @@ export type DashStreams = {
 };
 
 export const parseDashManifest = (manifest: string): DashStreams | null => {
-	const unescaped = manifest.replace(/&amp;/g, "&");
-
-	const audioMatch = unescaped.match(
-		/<AdaptationSet[^>]*contentType="audio"[\s\S]*?<BaseURL>([^<]+)<\/BaseURL>/,
-	);
-	if (!audioMatch?.[1]) return null;
-
-	const videoSection = unescaped.match(
-		/<AdaptationSet[^>]*contentType="video"[\s\S]*?<\/AdaptationSet>/,
-	);
-	if (!videoSection?.[0]) return null;
-
-	const reps = [
-		...videoSection[0].matchAll(
-			/<Representation[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"[^>]*>[\s\S]*?<BaseURL>([^<]+)<\/BaseURL>/g,
-		),
-	].map((match) => {
-		const tag = match[0];
-		const codecs = tag.match(/codecs="([^"]+)"/)?.[1] ?? "";
-		return {
-			width: Number(match[1]),
-			height: Number(match[2]),
-			url: match[3] as string,
-			codecs,
-		};
-	});
+	const { audioUrl, videos } = parseDash(manifest);
+	if (!audioUrl || videos.length === 0) return null;
 
 	logger.info(
-		`[instagram] dash variants: ${reps
+		`[instagram] dash variants: ${videos
 			.map((r) => `${r.height}p ${r.codecs.split(".")[0] || "?"}`)
 			.join(", ")}`,
 	);
 
-	const maxHeight = config.instagram.maxQuality;
-	const withinCap = reps.filter((r) => r.height <= maxHeight);
-	const h264WithinCap = withinCap.filter((r) => r.codecs.startsWith("avc"));
-	const h264 = reps.filter((r) => r.codecs.startsWith("avc"));
-
-	const sortedDesc = (rs: typeof reps) =>
-		[...rs].sort((a, b) => b.height - a.height);
-	const sortedAsc = (rs: typeof reps) =>
-		[...rs].sort((a, b) => a.height - b.height);
+	const isH264 = (r: (typeof videos)[number]) => r.codecs.startsWith("avc");
+	const withinCap = videos.filter(
+		(r) => r.height <= config.instagram.maxQuality,
+	);
+	const tallest = (rs: typeof videos) =>
+		[...rs].sort((a, b) => b.height - a.height).at(0);
+	const shortest = (rs: typeof videos) =>
+		[...rs].sort((a, b) => a.height - b.height).at(0);
 
 	const best =
-		sortedDesc(h264WithinCap).at(0) ??
-		sortedDesc(withinCap).at(0) ??
-		sortedAsc(h264).at(0) ??
-		sortedAsc(reps).at(0);
-
-	if (!best?.url || !audioMatch[1]) return null;
+		tallest(withinCap.filter(isH264)) ??
+		tallest(withinCap) ??
+		shortest(videos.filter(isH264)) ??
+		shortest(videos);
+	if (!best) return null;
 
 	logger.info(
 		`[instagram] dash: picked ${best.height}p ${best.codecs || "?"} video + audio`,
@@ -116,10 +89,10 @@ export const parseDashManifest = (manifest: string): DashStreams | null => {
 
 	return {
 		videoUrl: best.url,
-		audioUrl: audioMatch[1],
+		audioUrl,
 		width: best.width,
 		height: best.height,
-		codecCompatible: best.codecs.startsWith("avc"),
+		codecCompatible: isH264(best),
 	};
 };
 
@@ -131,48 +104,30 @@ const hasDirectMedia = (media: InstagramMedia): boolean =>
 export const findInstagramMedia = (
 	value: unknown,
 	shortcode: string,
-): InstagramMedia | null => {
-	if (value === null || typeof value !== "object") return null;
-	const parsed = InstagramMediaSchema.safeParse(value);
-	if (
-		parsed.success &&
-		hasDirectMedia(parsed.data) &&
-		(parsed.data.code === shortcode || parsed.data.code === undefined)
-	) {
-		return parsed.data;
-	}
-
-	for (const child of Object.values(value as Record<string, unknown>)) {
-		if (typeof child !== "object" || child === null) continue;
-		const found = findInstagramMedia(child, shortcode);
-		if (found) return found;
-	}
-	return null;
-};
+): InstagramMedia | null =>
+	findDeep(value, (node) => {
+		const { data } = InstagramMediaSchema.safeParse(node);
+		return data &&
+			hasDirectMedia(data) &&
+			(data.code === shortcode || data.code === undefined)
+			? data
+			: null;
+	});
 
 const findGraphMedia = (
 	value: unknown,
 	shortcode: string,
-): InstagramGraphMedia | null => {
-	if (value === null || typeof value !== "object") return null;
-	const parsed = InstagramGraphMediaSchema.safeParse(value);
-	if (
-		parsed.success &&
-		(parsed.data.video_url ||
-			parsed.data.display_url ||
-			parsed.data.edge_sidecar_to_children?.edges?.length) &&
-		(parsed.data.shortcode === shortcode || parsed.data.shortcode === undefined)
-	) {
-		return parsed.data;
-	}
-
-	for (const child of Object.values(value as Record<string, unknown>)) {
-		if (typeof child !== "object" || child === null) continue;
-		const found = findGraphMedia(child, shortcode);
-		if (found) return found;
-	}
-	return null;
-};
+): InstagramGraphMedia | null =>
+	findDeep(value, (node) => {
+		const { data } = InstagramGraphMediaSchema.safeParse(node);
+		return data &&
+			(data.video_url ||
+				data.display_url ||
+				data.edge_sidecar_to_children?.edges?.length) &&
+			(data.shortcode === shortcode || data.shortcode === undefined)
+			? data
+			: null;
+	});
 
 const graphMusicOf = (
 	media: InstagramGraphMedia,
@@ -201,24 +156,16 @@ const normalizeGraphMedia = (media: InstagramGraphMedia): InstagramMedia => {
 	const height = media.dimensions?.height;
 	return {
 		code: media.shortcode,
-		...(media.video_url
-			? { video_versions: [{ url: media.video_url, width, height }] }
-			: {}),
-		...(media.display_url
-			? {
-					image_versions2: {
-						candidates: [{ url: media.display_url, width, height }],
-					},
-				}
-			: {}),
-		...(media.edge_sidecar_to_children?.edges
-			? {
-					carousel_media: media.edge_sidecar_to_children.edges
-						.map((edge) => edge.node)
-						.filter((node): node is InstagramGraphMedia => !!node)
-						.map(normalizeGraphMedia),
-				}
-			: {}),
+		video_versions: media.video_url
+			? [{ url: media.video_url, width, height }]
+			: undefined,
+		image_versions2: media.display_url
+			? { candidates: [{ url: media.display_url, width, height }] }
+			: undefined,
+		carousel_media: media.edge_sidecar_to_children?.edges
+			?.map((edge) => edge.node)
+			.filter((node): node is InstagramGraphMedia => !!node)
+			.map(normalizeGraphMedia),
 		video_duration: media.video_duration,
 		original_width: width,
 		original_height: height,
@@ -253,41 +200,32 @@ const itemPlanOf = (
 	const duration = item.video_duration
 		? Math.round(item.video_duration)
 		: undefined;
-	// The proxy stays as a fallback for edges that reject the datacenter IP.
-	const proxyCtx = getHttpContext() ?? { forceProxy: true };
-	const sources: AtomicVideoSource[] = [];
 	const streams = item.video_dash_manifest
 		? parseDashManifest(item.video_dash_manifest)
 		: null;
-	if (streams) {
-		sources.push({
-			kind: "mux",
-			videoUrl: streams.videoUrl,
-			audioUrl: streams.audioUrl,
-			videoCodecCompatible: streams.codecCompatible,
-			httpContext: DIRECT,
-		});
-	}
 	const videoUrl = item.video_versions?.[0]?.url;
-	if (videoUrl) {
-		sources.push({
-			kind: "download",
-			url: videoUrl,
-			headers,
-			attempts: 2,
-			connections: DOWNLOAD_CONNECTIONS,
-			minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
-			httpContext: DIRECT,
-		});
-		sources.push({
-			kind: "download",
-			url: videoUrl,
-			headers,
-			attempts: 2,
-			connections: DOWNLOAD_CONNECTIONS,
-			httpContext: proxyCtx,
-		});
-	}
+	const sources: AtomicVideoSource[] = [
+		...(streams
+			? [
+					{
+						kind: "mux" as const,
+						videoUrl: streams.videoUrl,
+						audioUrl: streams.audioUrl,
+						videoCodecCompatible: streams.codecCompatible,
+						httpContext: DIRECT,
+					},
+				]
+			: []),
+		...(videoUrl
+			? directThenProxy({
+					kind: "download",
+					url: videoUrl,
+					headers,
+					attempts: 2,
+					connections: DOWNLOAD_CONNECTIONS,
+				})
+			: []),
+	];
 	if (sources.length > 0) {
 		return {
 			type: "video",
@@ -353,15 +291,14 @@ export const instagramCaptionOf = (media: InstagramMedia): Caption => {
 		...(media.like_count != null && !hidden ? { likes: media.like_count } : {}),
 		...(media.comment_count != null ? { comments: media.comment_count } : {}),
 	};
-	const music = musicOf(media);
 	return {
-		...(user?.username ? { author: user.username } : {}),
-		...(user?.full_name ? { name: user.full_name } : {}),
-		...(user?.is_verified ? { verified: true } : {}),
-		...(media.caption?.text ? { text: media.caption.text } : {}),
-		...(Object.keys(stats).length > 0 ? { stats } : {}),
-		...(media.taken_at ? { postedAt: media.taken_at } : {}),
-		...(music ? { music } : {}),
+		author: user?.username || undefined,
+		name: user?.full_name || undefined,
+		verified: user?.is_verified || undefined,
+		text: media.caption?.text || undefined,
+		stats: Object.keys(stats).length > 0 ? stats : undefined,
+		postedAt: media.taken_at || undefined,
+		music: musicOf(media),
 	};
 };
 
@@ -426,7 +363,7 @@ export const buildInstagramMediaPlan = (
 					type: "carousel",
 					items,
 					caption,
-					...(audio ? { audio } : {}),
+					audio,
 					maxBytes: config.telegram.maxCarouselBytes,
 				})
 			: F.fail(extractionError("NO_MEDIA", "no carousel media urls"));
@@ -436,5 +373,5 @@ export const buildInstagramMediaPlan = (
 	if (!item) return F.fail(extractionError("NO_MEDIA", "no media url"));
 	return audio && item.type === "photo"
 		? F.of({ type: "carousel", items: [item], caption, audio })
-		: F.of({ ...item, caption } as MediaPlan);
+		: F.of(planOfItem(item, caption));
 };

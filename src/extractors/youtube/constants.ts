@@ -1,7 +1,5 @@
+import { CHROME_UA } from "extractors/constants";
 import type { Client } from "extractors/youtube/types";
-
-export const CHROME_UA =
-	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 export const YOUTUBE_HOME_URL = "https://www.youtube.com/";
 export const PLAYER_ENDPOINT =
@@ -32,8 +30,14 @@ export const REQUEST_TIMEOUT_MS = 6_000;
 export const ENGAGEMENT_TIMEOUT_MS = 8_000;
 // How long a ready video may wait for likes, comments and the date.
 export const ENGAGEMENT_GRACE_MS = 1_000;
-export const DOWNLOAD_CONNECTIONS = 8;
-export const DOWNLOAD_MIN_BYTES_PER_SECOND = 512 * 1024;
+
+// How YouTube words a "no" that another client or address will not change.
+export const AGE_GATE_PATTERN = /confirm your age|age[- ]restricted/i;
+export const REMOVED_PATTERN =
+	/has been removed|is private|private video|has been terminated|no longer available/i;
+// A client also says this about videos it merely refuses to play, so it only
+// counts when every client agrees.
+export const UNAVAILABLE_PATTERN = /video (?:is )?unavailable/i;
 
 export const VIDEO_ID_PATTERNS = [
 	/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,

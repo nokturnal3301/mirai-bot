@@ -47,6 +47,16 @@ export type Caption = {
 	sensitive?: boolean;
 };
 
+export type DashVideo = {
+	url: string;
+	width: number;
+	height: number;
+	bandwidth: number;
+	codecs: string;
+};
+
+export type DashManifest = { audioUrl?: string; videos: DashVideo[] };
+
 export type RemoteMediaResource = {
 	kind: "remote";
 	url: string;
@@ -61,10 +71,14 @@ export type RemoteMediaResource = {
 	};
 };
 
+// A file Telegram already stores, replayed from the cache by its id.
+export type TelegramFile = { kind: "telegram"; fileId: string };
+
+// A string is always a URL that Telegram downloads itself.
 export type Media =
 	| {
 			type: "video";
-			data: Blob | string | RemoteMediaResource;
+			data: Blob | string | RemoteMediaResource | TelegramFile;
 			width?: number;
 			height?: number;
 			duration?: number;
@@ -72,14 +86,14 @@ export type Media =
 	  }
 	| {
 			type: "photo";
-			data: Blob | string;
+			data: Blob | string | TelegramFile;
 			width?: number;
 			height?: number;
 			caption?: Caption;
 	  }
 	| {
 			type: "audio";
-			data: Blob | string;
+			data: Blob | string | TelegramFile;
 			duration?: number;
 			title?: string;
 			performer?: string;
@@ -87,6 +101,8 @@ export type Media =
 	| {
 			type: "carousel";
 			items: MediaItem[];
+			// Items in the original post, set when some could not be included.
+			total?: number;
 			caption?: Caption;
 			audio?: {
 				data: Blob | string;

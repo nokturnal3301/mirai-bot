@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { MediaPlan } from "extractors/media";
+import { directThenProxy, type MediaPlan } from "extractors/media";
 import type { Caption } from "extractors/types";
 import type { SSRItem } from "extractors/tiktok/schemas";
 import { SSRDataSchema } from "extractors/tiktok/schemas";
@@ -8,9 +8,9 @@ import type { StrategyContext } from "lib";
 import type { ExtractionError } from "lib";
 import type { Flow } from "lib/flow";
 import {
+	cookiePairs,
 	extractionError,
 	F,
-	getHttpContext,
 	http,
 	logger,
 	strategyFact,
@@ -19,7 +19,6 @@ import {
 import {
 	AUDIO_TIMEOUT_MS,
 	DOWNLOAD_CONNECTIONS,
-	DOWNLOAD_MIN_BYTES_PER_SECOND,
 	HEADERS,
 	POST_ID_PATTERN,
 	POST_URL_PATTERN,
@@ -31,6 +30,24 @@ export type TikTokStrategyInput = { url: string };
 export type TikTokTarget = {
 	pageUrl: string;
 	postId: string;
+};
+
+export type TikTokPage = { html: string; cookies: string };
+
+export const fetchTikTokPage = async (
+	pageUrl: string,
+	signal: AbortSignal,
+	headers: Record<string, string> = {},
+): Promise<TikTokPage> => {
+	const response = await http(pageUrl, {
+		headers: { ...HEADERS, Accept: "text/html", ...headers },
+		responseType: "textWithHeaders",
+		signal,
+	});
+	return {
+		html: response.body,
+		cookies: cookiePairs(response.headers).join("; "),
+	};
 };
 
 const SSR_PATTERN =
@@ -110,9 +127,9 @@ export const captionOf = (item: SSRItem): Caption => {
 		name: item.author?.nickname?.trim() || undefined,
 		verified: item.author?.verified,
 		text: item.desc,
-		...(Object.values(stats).some((value) => value !== undefined)
-			? { stats }
-			: {}),
+		stats: Object.values(stats).some((value) => value !== undefined)
+			? stats
+			: undefined,
 		postedAt: item.createTime || undefined,
 		music: musicOf(item.music),
 	};
@@ -193,33 +210,20 @@ export const buildTikTokMediaPlan = (
 		`[tiktok] rendition ${source.width ?? "?"}x${source.height ?? "?"} ${sizeLabel(source.size)} ${source.bitrate ?? "?"}bps`,
 	);
 
-	// Signed CDN URLs (incl. tt_chain_token) are not IP-bound, so the heavy
-	// media transfer runs direct from the fast datacenter link even though the
-	// page was extracted through the residential proxy. The proxy is kept only
-	// as a fallback for the rare CDN edge that rejects the datacenter IP.
+	// Signed CDN URLs (incl. tt_chain_token) are not IP-bound, so the page may
+	// come through the residential proxy while the file itself goes direct.
 	// TikTok's DataSize is the exact file size, which spares the size probe.
-	const authenticatedDownload = {
-		kind: "download" as const,
-		url: source.url,
-		headers: authenticatedHeaders,
-		connections: DOWNLOAD_CONNECTIONS,
-		...(source.size ? { expectedBytes: source.size } : {}),
-	};
 	return F.of({
 		type: "video",
 		source: {
 			kind: "fallback",
-			sources: [
-				{
-					...authenticatedDownload,
-					minBytesPerSecond: DOWNLOAD_MIN_BYTES_PER_SECOND,
-					httpContext: { forceProxy: false },
-				},
-				{
-					...authenticatedDownload,
-					httpContext: getHttpContext() ?? { forceProxy: true },
-				},
-			],
+			sources: directThenProxy({
+				kind: "download",
+				url: source.url,
+				headers: authenticatedHeaders,
+				connections: DOWNLOAD_CONNECTIONS,
+				expectedBytes: source.size || undefined,
+			}),
 		},
 		width: source.width,
 		height: source.height,
